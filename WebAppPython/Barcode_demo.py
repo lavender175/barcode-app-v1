@@ -166,39 +166,79 @@ if st.session_state["authentication_status"] is True:
 
     # === MODULE 2: XUẤT KHO & KIỂM TRA (SCANNER) ===
     elif "Xuất Kho" in current_tab:
-        st.subheader("🔍 Quét kiểm tra & Xuất hàng")
-        mode = st.radio("Input:", ["Webcam Live", "Upload Ảnh"], horizontal=True)
-        img_in = st.camera_input("Quét mã") if mode == "Webcam Live" else st.file_uploader("Tải ảnh")
+        st.subheader("📤 Xuất Kho & Kiểm Tra")
 
-        if img_in:
-            p_img, codes = decode_img(img_in.getvalue())
-            col_L, col_R = st.columns(2)
-            with col_L:
-                st.image(p_img, caption="Camera Feed")
+        # Tạo nút chuyển đổi chế độ nhập liệu
+        input_method = st.radio(
+            "Chọn thiết bị nhập liệu:",
+            ["🔫 Súng Quét (PC/Kho)", "📱 Camera Điện Thoại (Mobile)"],
+            horizontal=True
+        )
 
-            with col_R:
+        st.divider()
+
+        final_code = None
+
+        # --- MODE A: DÙNG SÚNG QUÉT (PC) ---
+        if "Súng Quét" in input_method:
+            c1, c2 = st.columns([2, 1])
+            with c1:
+                st.info("💡 Đặt trỏ chuột vào ô bên dưới và bắn mã.")
+                # Ô này sẽ nhận tín hiệu từ máy quét (hoặc paste thủ công để test)
+                scan_input = st.text_input("INPUT:", placeholder="Đang chờ tín hiệu...", key="scanner_in")
+                if scan_input:
+                    final_code = scan_input
+            with c2:
+                st.image("https://cdn-icons-png.flaticon.com/512/2830/2830305.png", caption="Hardware Scanner Mode",
+                         width=100)
+
+        # --- MODE B: DÙNG CAMERA (MOBILE) ---
+        else:
+            st.warning("💡 Lưu ý: Giữ camera ổn định, đủ ánh sáng.")
+            # Camera Input của Streamlit chạy rất mượt trên Mobile
+            img_file = st.camera_input("Chụp ảnh mã vạch")
+
+            if img_file:
+                # Gọi hàm xử lý ảnh "Vua Lì Đòn"
+                p_img, codes = decode_img(img_file.getvalue())
+
                 if codes:
-                    for code in codes:
-                        st.markdown(f"### 📦 Phát hiện: `{code}`")
-
-                        # LOGIC KIỂM TRA HẠN SỬ DỤNG (Mock Data demo)
-                        # Thực tế sẽ query từ Google Sheet về để check
-                        if "LOT" in code:
-                            parts = code.split("|")
-                            sku_code = parts[0]
-                            st.success(f"✅ Mã hợp lệ: {sku_code}")
-
-                            # Giả lập check HSD (Demo logic)
-                            # Nếu muốn xịn, phải query ws.get_all_values() để tìm dòng có mã này
-                            st.warning("⚠️ Lưu ý: Kiểm tra kỹ HSD trên bao bì trước khi xuất!")
-
-                            ws = connect_db("Inventory")
-                            if ws:
-                                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                ws.append_row([now, user_name, code, "EXPORT", "", "", "Cổng Xuất 1", -1])
-                                st.toast(f"Đã xuất kho: {code}")
+                    final_code = codes[0]  # Lấy mã đầu tiên
+                    st.success("✅ Đã đọc được mã!")
                 else:
-                    st.error("Không tìm thấy mã vạch!")
+                    st.error("❌ Ảnh mờ hoặc không có mã. Hãy thử lại!")
+                    st.image(p_img, caption="Ảnh vừa chụp (Không đọc được)", width=300)
+
+        # --- XỬ LÝ KẾT QUẢ CHUNG (CHO CẢ 2 CHẾ ĐỘ) ---
+        if final_code:
+            st.divider()
+            st.markdown(f"### 📦 MÃ ĐÃ QUÉT: `{final_code}`")
+
+            # Logic phân tích mã
+            sku = final_code
+            batch = "N/A"
+
+            if "|" in final_code:
+                sku, batch = final_code.split("|")
+
+            # Hiển thị thẻ thông tin đẹp
+            m1, m2 = st.columns(2)
+            m1.metric("Sản phẩm (SKU)", sku)
+            m2.metric("Lô hàng (Batch)", batch, delta="Đang xuất kho", delta_color="inverse")
+
+            # Ghi vào Database
+            ws = connect_db("Inventory")
+            if ws:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # Ghi Log
+                ws.append_row([now, user_name, final_code, "EXPORT", "", "", "Mobile/Scanner", -1])
+                st.toast(f"Đã xuất kho: {sku}", icon="🚛")
+
+                # Hiệu ứng thành công
+                if "Súng Quét" in input_method:
+                    st.balloons()  # PC thì thả bóng
+                else:
+                    st.snow()  # Mobile thì thả tuyết (cho nhẹ máy)
 
     # === MODULE 3: DASHBOARD (CHỈ MANAGER THẤY) ===
     elif "Dashboard" in current_tab:
