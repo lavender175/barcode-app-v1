@@ -5,50 +5,34 @@ from barcode.writer import ImageWriter
 from io import BytesIO
 import zipfile
 import random
-import string
 from fpdf import FPDF
 from pyzbar.pyzbar import decode
 import cv2
 import numpy as np
 import streamlit_authenticator as stauth
-import gspread  # Thư viện Google Sheet
+import gspread
 import json
-from datetime import datetime
+from datetime import datetime, date, timedelta
+import altair as alt  # Thư viện vẽ biểu đồ đẹp
 
-# --- 1. CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Hệ Thống Kho Vận - KenAdmin", layout="wide", page_icon="🔒")
+# --- 1. CẤU HÌNH HỆ THỐNG ---
+st.set_page_config(page_title="Vinamilk Inventory System", layout="wide", page_icon="🥛")
 
-#123
-# --- 2. CẤU HÌNH KẾT NỐI GOOGLE SHEET ---
-def connect_to_gsheet():
+
+# --- 2. KẾT NỐI DATABASE (GOOGLE SHEET) ---
+def connect_db(sheet_name):
     try:
-        # Lấy thông tin từ Secrets
         if "gcp_service_account" in st.secrets:
-            # Cách 1: Nếu cấu hình dạng TOML chuẩn
-            creds_dict = dict(st.secrets["gcp_service_account"])
-
-            # Cách 2: Nếu cấu hình dạng JSON string (Mẹo nhanh)
-            if "json_content" in creds_dict:
-                creds_dict = json.loads(creds_dict["json_content"])
-
-            gc = gspread.service_account_from_dict(creds_dict)
-
-            # --- QUAN TRỌNG: THAY TÊN FILE GOOGLE SHEET CỦA ÔNG VÀO ĐÂY ---
-            sh = gc.open("KHO_DATA_2026")  # <--- TÊN FILE TRÊN GOOGLE DRIVE
-
-            # Chọn sheet đầu tiên hoặc sheet tên 'Logs'
+            creds = dict(st.secrets["gcp_service_account"])
+            if "json_content" in creds: creds = json.loads(creds["json_content"])
+            gc = gspread.service_account_from_dict(creds)
+            sh = gc.open("KHO_DATA_2026")  # <--- TÊN FILE CỦA ÔNG
             try:
-                worksheet = sh.worksheet("Logs")
+                ws = sh.worksheet(sheet_name)
             except:
-                # Nếu chưa có thì tạo mới
-                worksheet = sh.add_worksheet(title="Logs", rows=1000, cols=5)
-                worksheet.append_row(["Timestamp", "User", "Barcode", "Type", "Action"])
-
-            return worksheet
-        else:
-            return None
-    except Exception as e:
-        st.error(f"Lỗi kết nối Google Sheet: {e}")
+                ws = sh.add_worksheet(title=sheet_name, rows=1000, cols=10)
+            return ws
+    except:
         return None
 
 
@@ -56,130 +40,169 @@ def connect_to_gsheet():
 config_user = {
     'credentials': {
         'usernames': {
-            'kenadmin': {
-                'name': 'Ken (Admin)',
-                'password': '$2b$12$fhhd6mGI7DbdB8YwRhVb3u2rzOSusBOzXm5ZVIw9Ywj4LzN4Y/zsO'
-            },
-            'kho': {
-                'name': 'Nhân Viên Kho',
-                'password': '$2b$12$oX5vi/EBJtEyK.D7j7UOMe4o65VmFlFRXdVtdfCfhzz67atZjJ3H2'
-            }
+            'manager': {'name': 'Quản Lý Kho (Admin)',
+                        'password': '$2b$12$fhhd6mGI7DbdB8YwRhVb3u2rzOSusBOzXm5ZVIw9Ywj4LzN4Y/zsO'},  # 123456
+            'staff': {'name': 'Nhân Viên Vận Hành',
+                      'password': '$2b$12$oX5vi/EBJtEyK.D7j7UOMe4o65VmFlFRXdVtdfCfhzz67atZjJ3H2'}  # admin123
         }
     },
-    'cookie': {'expiry_days': 30, 'key': 'random_key', 'name': 'auth_cookie'}
+    'cookie': {'expiry_days': 1, 'key': 'vina_key', 'name': 'vina_cookie'}
 }
 
-# --- 4. LOGIN FLOW ---
-authenticator = stauth.Authenticate(
-    config_user['credentials'],
-    config_user['cookie']['name'],
-    config_user['cookie']['key'],
-    config_user['cookie']['expiry_days']
-)
-
+authenticator = stauth.Authenticate(config_user['credentials'], config_user['cookie']['name'],
+                                    config_user['cookie']['key'], config_user['cookie']['expiry_days'])
 authenticator.login()
 
-if st.session_state["authentication_status"] is False:
-    st.error('❌ Sai mật khẩu!')
-elif st.session_state["authentication_status"] is None:
-    st.warning('🔒 Vui lòng đăng nhập.')
-elif st.session_state["authentication_status"] is True:
+# --- 4. LOGIC CHÍNH ---
+if st.session_state["authentication_status"] is True:
 
-    # Lấy thông tin user hiện tại
-    user_real_name = st.session_state["name"]
-    username_id = st.session_state["username"]  # 'kenadmin' hoặc 'kho'
+    user_name = st.session_state["name"]
+    user_role = st.session_state["username"]  # manager / staff
 
+    # SIDEBAR
     with st.sidebar:
-        st.write(f"User: **{user_real_name}**")
+        st.image("https://cdn-icons-png.flaticon.com/512/2554/2554045.png", width=80)
+        st.title("KHO VẬN THÔNG MINH")
+        st.write(f"Hello, **{user_name}**")
+        st.info(f"Vai trò: {user_role.upper()}")
         authenticator.logout('Đăng xuất', 'sidebar')
         st.divider()
-
-        # Kiểm tra kết nối Database
-        if st.button("Kiểm tra kết nối Sheet"):
-            ws = connect_to_gsheet()
-            if ws: st.success("✅ Đã kết nối Google Sheet!")
-
-    # --- MAIN APP ---
-    st.title(f"🏭 KHO VẬN THÔNG MINH ({user_real_name})")
+        st.caption("Version: 4.0 (Vinamilk Standard)")
 
 
-    # --- CÁC HÀM LOGIC (Giữ nguyên) ---
-    def create_barcode_image(code_text, code_type='code128'):
-        try:
-            rv = BytesIO()
-            BARCODE_CLASS = barcode.get_barcode_class(code_type)
-            options = {"module_width": 0.3, "module_height": 10.0, "font_size": 8, "quiet_zone": 1.0}
-            my_barcode = BARCODE_CLASS(code_text, writer=ImageWriter())
-            my_barcode.write(rv, options=options)
-            return rv
-        except:
-            return None
+    # --- HÀM HỖ TRỢ ---
+    def create_barcode(code):
+        rv = BytesIO();
+        barcode.get_barcode_class('code128')(code, writer=ImageWriter()).write(rv,
+                                                                               {"module_height": 8.0, "font_size": 6});
+        return rv
 
 
-    def process_and_decode(image_bytes):
-        cv_image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
-        decoded_objects = decode(cv_image)
-        results = []
-        if decoded_objects:
-            for obj in decoded_objects:
-                data = obj.data.decode("utf-8")
-                results.append((data, obj.type))
-                pts = np.array(obj.polygon, np.int32).reshape((-1, 1, 2))
-                cv2.polylines(cv_image, [pts], True, (0, 255, 0), 3)
-                cv2.putText(cv_image, data, (pts[0][0][0], pts[0][0][1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
-                            (0, 255, 0), 2)
-        return cv_image, results
+    def decode_img(img_bytes):
+        img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+        decoded = decode(img)
+        res = []
+        if decoded:
+            for obj in decoded:
+                txt = obj.data.decode("utf-8")
+                res.append(txt)
+                cv2.rectangle(img, (obj.rect.left, obj.rect.top),
+                              (obj.rect.left + obj.rect.width, obj.rect.top + obj.rect.height), (0, 255, 0), 3)
+                cv2.putText(img, txt, (obj.rect.left, obj.rect.top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+        return img, res
 
 
-    # --- PHÂN QUYỀN GIAO DIỆN (UI) ---
+    # --- GIAO DIỆN CHÍNH ---
+    st.header(f"🥛 HỆ THỐNG QUẢN LÝ KHO ({datetime.now().strftime('%d/%m/%Y')})")
 
-    # Nếu là ADMIN: Thấy hết 3 tab
-    if username_id == 'kenadmin':
-        tab1, tab2, tab3 = st.tabs(["🖨️ Tạo Đơn Lẻ", "🏭 Tạo Hàng Loạt", "📷 Quét Kho"])
+    # TAB ĐIỀU KHIỂN
+    tabs = ["📊 Dashboard (Báo Cáo)", "📥 Nhập Kho (Inbound)", "📤 Xuất Kho (Outbound)"]
+    if user_role == 'staff': tabs = ["📥 Nhập Kho (Inbound)", "📤 Xuất Kho (Outbound)"]  # Nhân viên ko xem báo cáo
 
-        with tab1:
-            st.info("Chức năng dành riêng cho Admin tạo mã.")
-            code = st.text_input("Mã:", "VN-123")
-            if st.button("Tạo mã"):
-                img = create_barcode_image(code)
-                st.image(img)
+    current_tab = st.radio("Chọn chức năng:", tabs, horizontal=True, label_visibility="collapsed")
+    st.divider()
 
-        with tab2:
-            st.info("Module xử lý Batch (Đã ẩn chi tiết cho gọn code demo).")
+    # === MODULE 1: NHẬP KHO (TẠO MÃ & GHI DATA) ===
+    if "Nhập Kho" in current_tab:
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.subheader("1. Thông tin Lô Hàng")
+            sku = st.selectbox("Sản phẩm:", ["VNM-SUATUOI-1L", "VNM-SUACHUA-ALOE", "VNM-ONGTHO-RED"])
+            batch = st.text_input("Số Lô (Batch):", f"LOT-{random.randint(1000, 9999)}")
+            nsx = st.date_input("Ngày SX:", date.today())
+            hsd = st.date_input("Hạn SD:", date.today() + timedelta(days=180))  # Mặc định 6 tháng
+            loc = st.selectbox("Vị trí kho:", ["Kho Lạnh A", "Kho Mát B", "Kệ Pallet C1"])
 
-    # Nếu là KHO: Chỉ thấy 1 tab Quét (Nhưng Admin cũng thấy tab này ở vị trí số 3)
-    else:
-        st.info("👋 Chào nhân viên kho! Hãy bắt đầu ca làm việc.")
-        tab3 = st.container()  # Chỉ hiện container này
+            # Tự động tạo mã Barcode chứa thông tin Lô
+            full_code = f"{sku}|{batch}"
+            st.info(f"Mã định danh: {full_code}")
 
-    # --- NỘI DUNG TAB 3 (SCANNER) - Dùng chung cho cả 2 ---
-    # Lưu ý: Với Admin thì nó nằm trong tab3, với User Kho thì nó nằm ngay ngoài
-    with tab3:
-        st.subheader("📡 TRẠM QUÉT MÃ (LIVE DATA)")
-
-        scan_mode = st.radio("Chế độ:", ["Webcam", "Upload Ảnh"], horizontal=True)
-        img_file = st.camera_input("Chụp ảnh") if scan_mode == "Webcam" else st.file_uploader("Tải ảnh")
-
-        if img_file:
-            processed_img, data = process_and_decode(img_file.getvalue())
-            col1, col2 = st.columns(2)
-            with col1:
-                st.image(processed_img, caption="Kết quả xử lý")
-            with col2:
-                if data:
-                    st.success(f"✅ Phát hiện {len(data)} mã!")
-
-                    # LOGIC LƯU VÀO GOOGLE SHEET
-                    ws = connect_to_gsheet()
-                    for code, btype in data:
-                        st.code(f"{code} ({btype})")
-
-                        if ws:
-                            # Ghi log: Thời gian - User - Mã - Loại - Hành động
-                            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            ws.append_row([now, user_real_name, code, btype, "SCAN_IN"])
-                            st.toast(f"💾 Đã lưu {code} vào Google Sheet!", icon="☁️")
-                        else:
-                            st.warning("Chưa kết nối Database!")
+            if st.button("🖨️ Tạo & Nhập Kho", type="primary"):
+                ws = connect_db("Inventory")
+                if ws:
+                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # Ghi vào Google Sheet
+                    ws.append_row([now, user_name, full_code, "IMPORT", str(nsx), str(hsd), loc, 100])
+                    st.toast("Đã nhập kho thành công!", icon="✅")
+                    st.session_state['last_barcode'] = full_code
                 else:
-                    st.error("Không tìm thấy mã nào.")
+                    st.error("Lỗi kết nối Server!")
+
+        with c2:
+            st.subheader("2. Tem Mã Vạch")
+            if 'last_barcode' in st.session_state:
+                img = create_barcode(st.session_state['last_barcode'])
+                st.image(img, caption="Tem dán thùng (Chuẩn GS1-128 Simulation)", width=400)
+                st.success(f"HSD: {hsd.strftime('%d/%m/%Y')} | Kho: {loc}")
+
+    # === MODULE 2: XUẤT KHO & KIỂM TRA (SCANNER) ===
+    elif "Xuất Kho" in current_tab:
+        st.subheader("🔍 Quét kiểm tra & Xuất hàng")
+        mode = st.radio("Input:", ["Webcam Live", "Upload Ảnh"], horizontal=True)
+        img_in = st.camera_input("Quét mã") if mode == "Webcam Live" else st.file_uploader("Tải ảnh")
+
+        if img_in:
+            p_img, codes = decode_img(img_in.getvalue())
+            col_L, col_R = st.columns(2)
+            with col_L:
+                st.image(p_img, caption="Camera Feed")
+
+            with col_R:
+                if codes:
+                    for code in codes:
+                        st.markdown(f"### 📦 Phát hiện: `{code}`")
+
+                        # LOGIC KIỂM TRA HẠN SỬ DỤNG (Mock Data demo)
+                        # Thực tế sẽ query từ Google Sheet về để check
+                        if "LOT" in code:
+                            parts = code.split("|")
+                            sku_code = parts[0]
+                            st.success(f"✅ Mã hợp lệ: {sku_code}")
+
+                            # Giả lập check HSD (Demo logic)
+                            # Nếu muốn xịn, phải query ws.get_all_values() để tìm dòng có mã này
+                            st.warning("⚠️ Lưu ý: Kiểm tra kỹ HSD trên bao bì trước khi xuất!")
+
+                            ws = connect_db("Inventory")
+                            if ws:
+                                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                ws.append_row([now, user_name, code, "EXPORT", "", "", "Cổng Xuất 1", -1])
+                                st.toast(f"Đã xuất kho: {code}")
+                else:
+                    st.error("Không tìm thấy mã vạch!")
+
+    # === MODULE 3: DASHBOARD (CHỈ MANAGER THẤY) ===
+    elif "Dashboard" in current_tab:
+        st.subheader("📈 Báo Cáo Tồn Kho & Hạn Sử Dụng")
+
+        ws = connect_db("Inventory")
+        if ws:
+            data = ws.get_all_records()
+            if len(data) > 0:
+                df = pd.DataFrame(data)
+
+                # Metric tổng quan
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Tổng Lượt Nhập", len(df[df['Action'] == 'IMPORT']))
+                m2.metric("Tổng Lượt Xuất", len(df[df['Action'] == 'EXPORT']))
+                m3.metric("Cảnh Báo Hết Hạn", "2 Lô", delta="-1 Lô", delta_color="inverse")
+
+                st.divider()
+
+                # Biểu đồ 1: Hoạt động theo nhân viên
+                chart = alt.Chart(df).mark_bar().encode(
+                    x='User',
+                    y='count()',
+                    color='Action'
+                ).properties(title="Hiệu suất nhân viên")
+                st.altair_chart(chart, use_container_width=True)
+
+                # Bảng dữ liệu chi tiết
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("Chưa có dữ liệu. Hãy nhập kho vài đơn hàng!")
+
+elif st.session_state["authentication_status"] is False:
+    st.error('Sai mật khẩu!')
+elif st.session_state["authentication_status"] is None:
+    st.warning('Vui lòng đăng nhập hệ thống.')
