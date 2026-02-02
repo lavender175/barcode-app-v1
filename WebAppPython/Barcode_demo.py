@@ -77,19 +77,48 @@ if st.session_state["authentication_status"] is True:
                                                                                {"module_height": 8.0, "font_size": 6});
         return rv
 
-
+    # --- HÀM XỬ LÝ ẢNH NÂNG CAO (SMART DECODE) ---
     def decode_img(img_bytes):
-        img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
-        decoded = decode(img)
-        res = []
-        if decoded:
-            for obj in decoded:
+        # 1. Đọc ảnh từ bytes sang format OpenCV
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        # 2. Chiến thuật 1: Đọc ngay ảnh gốc
+        decoded_objects = decode(img)
+
+        # 3. Chiến thuật 2: Nếu thất bại, chuyển sang Đen Trắng (Grayscale)
+        if not decoded_objects:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            decoded_objects = decode(gray)
+
+            # 4. Chiến thuật 3: Nếu vẫn thất bại, dùng Threshold (Nhị phân hóa)
+            # Giúp làm rõ các vạch đen trên nền trắng, loại bỏ nhiễu màu
+            if not decoded_objects:
+                _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+                decoded_objects = decode(thresh)
+
+        # 5. Vẽ kết quả lên ảnh (nếu tìm thấy)
+        results = []
+        if decoded_objects:
+            for obj in decoded_objects:
                 txt = obj.data.decode("utf-8")
-                res.append(txt)
-                cv2.rectangle(img, (obj.rect.left, obj.rect.top),
-                              (obj.rect.left + obj.rect.width, obj.rect.top + obj.rect.height), (0, 255, 0), 3)
-                cv2.putText(img, txt, (obj.rect.left, obj.rect.top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-        return img, res
+                results.append(txt)
+
+                # Vẽ khung xanh lá
+                points = obj.polygon
+                if len(points) == 4:
+                    pts = np.array(points, np.int32).reshape((-1, 1, 2))
+                    cv2.polylines(img, [pts], True, (0, 255, 0), 3)
+                else:
+                    # Trường hợp khung hình chữ nhật đơn giản
+                    x, y, w, h = obj.rect
+                    cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 3)
+
+                # Vẽ chữ lên ảnh
+                x, y, w, h = obj.rect
+                cv2.putText(img, txt, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+        return img, results
 
 
     # --- GIAO DIỆN CHÍNH ---
