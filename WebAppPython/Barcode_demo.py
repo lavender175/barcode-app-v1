@@ -140,6 +140,7 @@ if st.session_state["authentication_status"] is True:
 
 
     # === MODULE 1: NHẬP KHO (INBOUND) & IN TEM ===
+    # === CẬP NHẬT MODULE 1: NHẬP KHO & IN TEM (BẢN VÁ LỖI STREAMLIT) ===
     if "Nhập Kho" in current_tab:
         st.subheader("📥 Nhập Kho & In Tem")
 
@@ -163,6 +164,7 @@ if st.session_state["authentication_status"] is True:
                     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     ws.append_row([now, user_name, full_code, "IMPORT", str(nsx), str(hsd), loc, qty])
                     st.toast(f"Đã nhập {qty} sản phẩm!", icon="✅")
+                    # Lưu session để dùng cho cột bên phải
                     st.session_state['last_import'] = {'code': full_code, 'qty': qty, 'batch': batch, 'hsd': str(hsd),
                                                        'sku': sku}
                 else:
@@ -181,98 +183,99 @@ if st.session_state["authentication_status"] is True:
 
                 col_print1, col_print2 = st.columns(2)
 
-                # --- FIX LỖI IN 1 TEM ---
+                # --- NÚT 1: IN TEM THÙNG (Đã Fix lỗi bytes) ---
                 with col_print1:
                     if st.button("📦 In 1 Tem Thùng"):
-                        pdf = FPDF(orientation='L', unit='mm', format=(100, 150))
-                        pdf.add_page()
-                        pdf.set_font("Helvetica", 'B', 20)  # Dùng font Helvetica chuẩn
-
-                        # Dùng hàm remove_accents để tránh lỗi font
-                        title = remove_accents("TEM LUU KHO")
-                        pdf.cell(0, 20, txt=title, ln=True, align='C')
-
-                        import tempfile
-
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                            img.seek(0)
-                            tmp.write(img.getvalue())
-                            pdf.image(tmp.name, x=10, y=30, w=130)
-
-                        pdf.set_xy(10, 80)
-                        pdf.set_font("Helvetica", size=12)
-
-                        # Chuẩn bị nội dung text (bỏ dấu tiếng Việt)
-                        content = (
-                            f"SP: {remove_accents(info['sku'])}\n"
-                            f"Lo: {info['batch']}\n"
-                            f"SL: {info['qty']}\n"
-                            f"HSD: {info['hsd']}"
-                        )
-                        pdf.multi_cell(0, 10, txt=content)
-
-                        # SỬA LỖI OUTPUT: Không dùng .encode('latin-1') nữa
                         try:
-                            pdf_data = pdf.output(dest='S').encode('latin-1')  # Cho bản cũ
-                        except:
-                            pdf_data = pdf.output()  # Cho bản mới (bytearray)
+                            pdf = FPDF(orientation='L', unit='mm', format=(100, 150))
+                            pdf.add_page()
+                            pdf.set_font("Helvetica", 'B', 20)
 
-                        st.download_button("⬇️ Tải Tem (PDF)", pdf_data, f"Pallet_{info['batch']}.pdf",
-                                           "application/pdf")
-
-                # --- FIX LỖI IN NHIỀU TEM ---
-                with col_print2:
-                    if st.button(f"🏷️ In {info['qty']} Tem Lẻ"):
-                        with st.spinner("Đang tạo file PDF..."):
-                            pdf_bulk = FPDF(orientation='P', unit='mm', format='A4')
-                            pdf_bulk.set_auto_page_break(auto=False, margin=0)
-                            pdf_bulk.add_page()
-
-                            margin_x, margin_y = 10, 10
-                            col_width, row_height = 65, 35
-                            cols, rows = 3, 8
-                            x, y = margin_x, margin_y
-                            count_x, count_y = 0
+                            # Tiêu đề không dấu
+                            pdf.cell(0, 20, txt=remove_accents("TEM LUU KHO"), ln=True, align='C')
 
                             import tempfile
 
-                            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_bulk:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
                                 img.seek(0)
-                                tmp_bulk.write(img.getvalue())
-                                tmp_path = tmp_bulk.name
+                                tmp.write(img.getvalue())
+                                pdf.image(tmp.name, x=10, y=30, w=130)
 
-                            for i in range(int(info['qty'])):
-                                pdf_bulk.rect(x, y, col_width, row_height)
-                                pdf_bulk.image(tmp_path, x=x + 2, y=y + 2, w=col_width - 4, h=row_height - 10)
-                                pdf_bulk.set_font("Helvetica", size=7)
-                                pdf_bulk.set_xy(x, y + row_height - 6)
+                            pdf.set_xy(10, 80)
+                            pdf.set_font("Helvetica", size=12)
+                            content = f"SP: {remove_accents(info['sku'])}\nLo: {info['batch']}\nSL: {info['qty']}\nHSD: {info['hsd']}"
+                            pdf.multi_cell(0, 10, txt=content)
 
-                                # Text dưới barcode (Bỏ dấu)
-                                txt_lbl = remove_accents(f"{info['sku']} | Exp: {info['hsd']}")
-                                pdf_bulk.cell(col_width, 5, txt=txt_lbl, align='C')
-
-                                count_x += 1
-                                if count_x < cols:
-                                    x += col_width
-                                else:
-                                    count_x = 0;
-                                    x = margin_x
-                                    count_y += 1;
-                                    y += row_height
-                                    if count_y >= rows:
-                                        pdf_bulk.add_page();
-                                        count_y = 0;
-                                        y = margin_y;
-                                        x = margin_x
-
-                            # SỬA LỖI OUTPUT
+                            # --- ĐOẠN QUAN TRỌNG: ÉP KIỂU BYTES ---
                             try:
-                                bulk_data = pdf_bulk.output(dest='S').encode('latin-1')
+                                # FPDF2 (Mới): output() trả về bytearray -> Ép sang bytes
+                                pdf_data = bytes(pdf.output())
                             except:
-                                bulk_data = pdf_bulk.output()
+                                # FPDF (Cũ): output(dest='S') trả về string -> Encode sang bytes
+                                pdf_data = pdf.output(dest='S').encode('latin-1')
 
-                            st.download_button("⬇️ Tải A4 (PDF)", bulk_data, f"Bulk_{info['batch']}.pdf",
+                            # Chỉ hiện nút tải nếu có dữ liệu chuẩn
+                            st.download_button("⬇️ Tải Tem (PDF)", pdf_data, f"Pallet_{info['batch']}.pdf",
                                                "application/pdf")
+
+                        except Exception as e:
+                            st.error(f"Lỗi tạo PDF: {e}")
+
+                # --- NÚT 2: IN TEM LẺ (Đã Fix lỗi bytes) ---
+                with col_print2:
+                    if st.button(f"🏷️ In {info['qty']} Tem Lẻ"):
+                        try:
+                            with st.spinner("Đang xử lý..."):
+                                pdf_bulk = FPDF(orientation='P', unit='mm', format='A4')
+                                pdf_bulk.set_auto_page_break(auto=False, margin=0)
+                                pdf_bulk.add_page()
+
+                                margin_x, margin_y = 10, 10
+                                col_width, row_height = 65, 35
+                                cols, rows = 3, 8
+                                x, y = margin_x, margin_y
+                                count_x, count_y = 0
+
+                                import tempfile
+
+                                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_bulk:
+                                    img.seek(0)
+                                    tmp_bulk.write(img.getvalue())
+                                    tmp_path = tmp_bulk.name
+
+                                for i in range(int(info['qty'])):
+                                    pdf_bulk.rect(x, y, col_width, row_height)
+                                    pdf_bulk.image(tmp_path, x=x + 2, y=y + 2, w=col_width - 4, h=row_height - 10)
+                                    pdf_bulk.set_font("Helvetica", size=7)
+                                    pdf_bulk.set_xy(x, y + row_height - 6)
+                                    txt_lbl = remove_accents(f"{info['sku']} | Exp: {info['hsd']}")
+                                    pdf_bulk.cell(col_width, 5, txt=txt_lbl, align='C')
+
+                                    count_x += 1
+                                    if count_x < cols:
+                                        x += col_width
+                                    else:
+                                        count_x = 0;
+                                        x = margin_x
+                                        count_y += 1;
+                                        y += row_height
+                                        if count_y >= rows:
+                                            pdf_bulk.add_page();
+                                            count_y = 0;
+                                            y = margin_y;
+                                            x = margin_x
+
+                                # --- ĐOẠN QUAN TRỌNG: ÉP KIỂU BYTES ---
+                                try:
+                                    bulk_data = bytes(pdf_bulk.output())
+                                except:
+                                    bulk_data = pdf_bulk.output(dest='S').encode('latin-1')
+
+                                st.download_button("⬇️ Tải A4 (PDF)", bulk_data, f"Bulk_{info['batch']}.pdf",
+                                                   "application/pdf")
+
+                        except Exception as e:
+                            st.error(f"Lỗi in hàng loạt: {e}")
 
     # === MODULE 2: XUẤT KHO & KIỂM TRA (SCANNER) ===
     elif "Xuất Kho" in current_tab:
