@@ -1,0 +1,9 @@
+streamlit
+pandas
+python-barcode
+pillow
+fpdf2
+pyzbar
+opencv-python-headless
+streamlit-authenticator
+gspread
