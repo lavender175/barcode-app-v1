@@ -56,7 +56,7 @@ def create_barcode_image(code_text, code_type='code128'):
     except Exception:
         return None
 
-
+# 12323
 # 4. Hàm tạo file PDF A4 (Layout 3x8)
 def create_pdf_a4(dataframe, target_col):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
