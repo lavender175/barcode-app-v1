@@ -41,9 +41,9 @@ config_user = {
     'credentials': {
         'usernames': {
             'manager': {'name': 'Quản Lý Kho (Admin)',
-                        'password': '$2b$12$fhhd6mGI7DbdB8YwRhVb3u2rzOSusBOzXm5ZVIw9Ywj4LzN4Y/zsO'},  # 123456
+                        'password': '$2b$12$MWFqC9gNSU93.GfxSUSqnOn4duvXwOrW2WX6Kq6QkL2f6ZgYypkY.'},  # 123456
             'staff': {'name': 'Nhân Viên Vận Hành',
-                      'password': '$2b$12$oX5vi/EBJtEyK.D7j7UOMe4o65VmFlFRXdVtdfCfhzz67atZjJ3H2'}  # admin123
+                      'password': '$2b$12$ZCxqkVJBagfsWJBoFntXSedewNTSBYbcKJHYbXdVP0k4jErvVYRVq'}  # admin123
         }
     },
     'cookie': {'expiry_days': 1, 'key': 'vina_key', 'name': 'vina_cookie'}
