@@ -79,10 +79,24 @@ if st.session_state["authentication_status"] is True:
 
     # --- HÀM HỖ TRỢ ---
     def create_barcode(code):
-        rv = BytesIO();
-        barcode.get_barcode_class('code128')(code, writer=ImageWriter()).write(rv,
-                                                                               {"module_height": 8.0, "font_size": 6});
-        return rv
+        try:
+            rv = BytesIO()
+            BARCODE_CLASS = barcode.get_barcode_class('code128')
+
+            options = {
+                "module_width": 0.5,  # <--- Tăng độ dày (Cũ là 0.2 hoặc 0.3)
+                "module_height": 15.0,
+                "font_size": 10,
+                "text_distance": 5.0,
+                "quiet_zone": 5.0,  # <--- Tăng khoảng trắng 2 đầu
+                "write_text": True
+            }
+
+            my_barcode = BARCODE_CLASS(code, writer=ImageWriter())
+            my_barcode.write(rv, options=options)
+            return rv
+        except Exception:
+            return None
 
     # --- HÀM XỬ LÝ ẢNH NÂNG CAO (SMART DECODE) ---
     def decode_img(img_bytes):
@@ -247,8 +261,13 @@ if st.session_state["authentication_status"] is True:
                                     tmp_path = tmp_bulk.name
 
                                 for i in range(int(info['qty'])):
-                                    pdf_bulk.rect(x, y, col_width, row_height)
-                                    pdf_bulk.image(tmp_path, x=x + 2, y=y + 2, w=col_width - 4, h=row_height - 10)
+                                    # --- XÓA HOẶC COMMENT DÒNG NÀY ĐỂ BỎ KHUNG ---
+                                    # pdf_bulk.rect(x, y, col_width, row_height) <--- DÒNG THỦ PHẠM
+
+                                    # Chỉ chèn ảnh và text thôi
+                                    pdf_bulk.image(tmp_path, x=x + 5, y=y + 2, w=col_width - 10,
+                                                   h=row_height - 10)  # Co ảnh lại chút cho thoáng
+
                                     pdf_bulk.set_font("Helvetica", size=7)
                                     pdf_bulk.set_xy(x, y + row_height - 6)
                                     txt_lbl = remove_accents(f"{info['sku']} | Exp: {info['hsd']}")
