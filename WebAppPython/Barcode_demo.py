@@ -234,7 +234,10 @@ if st.session_state["authentication_status"] is True:
                                 col_width, row_height = 65, 35
                                 cols, rows = 3, 8
                                 x, y = margin_x, margin_y
-                                count_x, count_y = 0
+
+                                # --- SỬA LỖI TẠI ĐÂY ---
+                                count_x, count_y = 0, 0
+                                # -----------------------
 
                                 import tempfile
 
@@ -265,7 +268,7 @@ if st.session_state["authentication_status"] is True:
                                             y = margin_y;
                                             x = margin_x
 
-                                # --- ĐOẠN QUAN TRỌNG: ÉP KIỂU BYTES ---
+                                # Xử lý output an toàn
                                 try:
                                     bulk_data = bytes(pdf_bulk.output())
                                 except:
