@@ -131,38 +131,148 @@ if st.session_state["authentication_status"] is True:
     current_tab = st.radio("Chọn chức năng:", tabs, horizontal=True, label_visibility="collapsed")
     st.divider()
 
-    # === MODULE 1: NHẬP KHO (TẠO MÃ & GHI DATA) ===
+
+    # === MODULE 1: NHẬP KHO (INBOUND) & IN TEM ===
     if "Nhập Kho" in current_tab:
-        c1, c2 = st.columns([1, 2])
+        st.subheader("📥 Nhập Kho & In Tem")
+
+        c1, c2 = st.columns([1, 1.5])
+
         with c1:
-            st.subheader("1. Thông tin Lô Hàng")
+            st.markdown("#### 1. Thông tin Lô Hàng")
             sku = st.selectbox("Sản phẩm:", ["VNM-SUATUOI-1L", "VNM-SUACHUA-ALOE", "VNM-ONGTHO-RED"])
+
+            # --- CẬP NHẬT: Thêm ô nhập số lượng ---
+            qty = st.number_input("Số lượng nhập (Qty):", min_value=1, value=100, step=10)
+
             batch = st.text_input("Số Lô (Batch):", f"LOT-{random.randint(1000, 9999)}")
             nsx = st.date_input("Ngày SX:", date.today())
-            hsd = st.date_input("Hạn SD:", date.today() + timedelta(days=180))  # Mặc định 6 tháng
-            loc = st.selectbox("Vị trí kho:", ["Kho Lạnh A", "Kho Mát B", "Kệ Pallet C1"])
+            hsd = st.date_input("Hạn SD:", date.today() + timedelta(days=180))
+            loc = st.selectbox("Vị trí lưu kho:", ["Kho Lạnh A", "Kho Mát B", "Kệ Pallet C1"])
 
-            # Tự động tạo mã Barcode chứa thông tin Lô
+            # Mã định danh lô hàng (SKU + Batch)
             full_code = f"{sku}|{batch}"
-            st.info(f"Mã định danh: {full_code}")
 
-            if st.button("🖨️ Tạo & Nhập Kho", type="primary"):
+            st.info(f"🆔 Mã lô: {full_code}")
+
+            # Nút Lưu vào Database
+            if st.button("💾 Lưu Phiếu Nhập Kho", type="primary"):
                 ws = connect_db("Inventory")
                 if ws:
                     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    # Ghi vào Google Sheet
-                    ws.append_row([now, user_name, full_code, "IMPORT", str(nsx), str(hsd), loc, 100])
-                    st.toast("Đã nhập kho thành công!", icon="✅")
-                    st.session_state['last_barcode'] = full_code
+                    # Ghi đúng số lượng (qty) vào cột cuối
+                    ws.append_row([now, user_name, full_code, "IMPORT", str(nsx), str(hsd), loc, qty])
+
+                    st.toast(f"Đã nhập {qty} sản phẩm vào kho!", icon="✅")
+                    # Lưu trạng thái để hiển thị bên cột bên phải
+                    st.session_state['last_import'] = {
+                        'code': full_code,
+                        'qty': qty,
+                        'batch': batch,
+                        'hsd': str(hsd)
+                    }
                 else:
-                    st.error("Lỗi kết nối Server!")
+                    st.error("Lỗi kết nối Google Sheet!")
 
         with c2:
-            st.subheader("2. Tem Mã Vạch")
-            if 'last_barcode' in st.session_state:
-                img = create_barcode(st.session_state['last_barcode'])
-                st.image(img, caption="Tem dán thùng (Chuẩn GS1-128 Simulation)", width=400)
-                st.success(f"HSD: {hsd.strftime('%d/%m/%Y')} | Kho: {loc}")
+            st.markdown("#### 2. Tùy chọn In Tem")
+
+            if 'last_import' in st.session_state:
+                info = st.session_state['last_import']
+                st.success(f"✅ Đã nhập lô: {info['batch']} (SL: {info['qty']})")
+
+                # Hiển thị tem mẫu
+                img = create_barcode(info['code'])
+                st.image(img, caption=f"Mã: {info['code']}", width=350)
+
+                st.divider()
+                st.write("🖨️ **Bạn muốn in tem thế nào?**")
+
+                # TÙY CHỌN IN ẤN
+                col_print1, col_print2 = st.columns(2)
+
+                # Option 1: In tem thùng (1 cái)
+                with col_print1:
+                    if st.button("📦 In 1 Tem Thùng"):
+                        # In 1 cái to
+                        pdf = FPDF(orientation='L', unit='mm', format=(100, 150))  # Khổ tem A6
+                        pdf.add_page()
+                        pdf.set_font("Arial", 'B', 24)
+                        pdf.cell(0, 20, txt="TEM LƯU KHO", ln=True, align='C')
+
+                        # Chèn ảnh barcode to
+                        import tempfile
+
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                            img.seek(0)
+                            tmp.write(img.getvalue())
+                            pdf.image(tmp.name, x=10, y=30, w=130)
+
+                        pdf.set_xy(10, 80)
+                        pdf.set_font("Arial", size=14)
+                        pdf.multi_cell(0, 10,
+                                       txt=f"SP: {sku}\nLô: {info['batch']}\nSL: {info['qty']}\nHSD: {info['hsd']}")
+
+                        pdf_data = pdf.output(dest='S').encode('latin-1')
+                        st.download_button("⬇️ Tải Tem Thùng (PDF)", pdf_data, f"Pallet_{info['batch']}.pdf",
+                                           "application/pdf")
+
+                # Option 2: In tem lẻ (In hàng loạt theo số lượng nhập)
+                with col_print2:
+                    if st.button(f"🏷️ In {info['qty']} Tem Lẻ"):
+                        # Logic tạo file PDF chứa 100 con tem
+                        with st.spinner(f"Đang tạo {info['qty']} con tem..."):
+                            pdf_bulk = FPDF(orientation='P', unit='mm', format='A4')
+                            pdf_bulk.set_auto_page_break(auto=False, margin=0)
+                            pdf_bulk.add_page()
+
+                            # Cấu hình lưới in (3 cột x 8 hàng = 24 tem/trang A4)
+                            margin_x, margin_y = 10, 10
+                            col_width, row_height = 65, 35
+                            cols, rows = 3, 8
+                            x, y = margin_x, margin_y
+                            count_x, count_y = 0, 0
+
+                            # Lưu ảnh barcode ra file tạm để dùng lại
+                            import tempfile
+
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_bulk:
+                                img.seek(0)
+                                tmp_bulk.write(img.getvalue())
+                                tmp_path = tmp_bulk.name
+
+                            # Vòng lặp in đúng số lượng (qty)
+                            for i in range(int(info['qty'])):
+                                # Vẽ khung
+                                pdf_bulk.rect(x, y, col_width, row_height)
+                                # Chèn ảnh
+                                pdf_bulk.image(tmp_path, x=x + 2, y=y + 2, w=col_width - 4, h=row_height - 10)
+                                # Ghi text nhỏ dưới barcode
+                                pdf_bulk.set_font("Arial", size=7)
+                                pdf_bulk.set_xy(x, y + row_height - 6)
+                                pdf_bulk.cell(col_width, 5, txt=f"{sku} | Exp: {info['hsd']}", align='C')
+
+                                # Tính vị trí tiếp theo
+                                count_x += 1
+                                if count_x < cols:
+                                    x += col_width
+                                else:
+                                    count_x = 0;
+                                    x = margin_x
+                                    count_y += 1;
+                                    y += row_height
+                                    if count_y >= rows:  # Sang trang mới
+                                        pdf_bulk.add_page();
+                                        count_y = 0;
+                                        y = margin_y;
+                                        x = margin_x
+
+                            bulk_data = pdf_bulk.output(dest='S').encode('latin-1')
+                            st.download_button("⬇️ Tải File In A4 (PDF)", bulk_data, f"Bulk_Labels_{info['batch']}.pdf",
+                                               "application/pdf")
+
+            else:
+                st.info("👈 Hãy nhập thông tin và bấm 'Lưu' để hiện tùy chọn in tem.")
 
     # === MODULE 2: XUẤT KHO & KIỂM TRA (SCANNER) ===
     elif "Xuất Kho" in current_tab:
