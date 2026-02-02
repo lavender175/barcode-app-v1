@@ -14,7 +14,14 @@ import gspread
 import json
 from datetime import datetime, date, timedelta
 import altair as alt  # Thư viện vẽ biểu đồ đẹp
+import unicodedata
 
+
+def remove_accents(input_str):
+    if not input_str: return ""
+    # Chuyển đổi Tiếng Việt có dấu -> Không dấu (để in PDF không bị lỗi font)
+    nfkd_form = unicodedata.normalize('NFKD', str(input_str))
+    return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 # --- 1. CẤU HÌNH HỆ THỐNG ---
 st.set_page_config(page_title="Vinamilk Inventory System", layout="wide", page_icon="🥛")
 
@@ -141,36 +148,23 @@ if st.session_state["authentication_status"] is True:
         with c1:
             st.markdown("#### 1. Thông tin Lô Hàng")
             sku = st.selectbox("Sản phẩm:", ["VNM-SUATUOI-1L", "VNM-SUACHUA-ALOE", "VNM-ONGTHO-RED"])
-
-            # --- CẬP NHẬT: Thêm ô nhập số lượng ---
             qty = st.number_input("Số lượng nhập (Qty):", min_value=1, value=100, step=10)
-
             batch = st.text_input("Số Lô (Batch):", f"LOT-{random.randint(1000, 9999)}")
             nsx = st.date_input("Ngày SX:", date.today())
             hsd = st.date_input("Hạn SD:", date.today() + timedelta(days=180))
             loc = st.selectbox("Vị trí lưu kho:", ["Kho Lạnh A", "Kho Mát B", "Kệ Pallet C1"])
 
-            # Mã định danh lô hàng (SKU + Batch)
             full_code = f"{sku}|{batch}"
-
             st.info(f"🆔 Mã lô: {full_code}")
 
-            # Nút Lưu vào Database
             if st.button("💾 Lưu Phiếu Nhập Kho", type="primary"):
                 ws = connect_db("Inventory")
                 if ws:
                     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    # Ghi đúng số lượng (qty) vào cột cuối
                     ws.append_row([now, user_name, full_code, "IMPORT", str(nsx), str(hsd), loc, qty])
-
-                    st.toast(f"Đã nhập {qty} sản phẩm vào kho!", icon="✅")
-                    # Lưu trạng thái để hiển thị bên cột bên phải
-                    st.session_state['last_import'] = {
-                        'code': full_code,
-                        'qty': qty,
-                        'batch': batch,
-                        'hsd': str(hsd)
-                    }
+                    st.toast(f"Đã nhập {qty} sản phẩm!", icon="✅")
+                    st.session_state['last_import'] = {'code': full_code, 'qty': qty, 'batch': batch, 'hsd': str(hsd),
+                                                       'sku': sku}
                 else:
                     st.error("Lỗi kết nối Google Sheet!")
 
@@ -179,28 +173,25 @@ if st.session_state["authentication_status"] is True:
 
             if 'last_import' in st.session_state:
                 info = st.session_state['last_import']
-                st.success(f"✅ Đã nhập lô: {info['batch']} (SL: {info['qty']})")
+                st.success(f"✅ Đã nhập lô: {info['batch']}")
 
-                # Hiển thị tem mẫu
                 img = create_barcode(info['code'])
                 st.image(img, caption=f"Mã: {info['code']}", width=350)
-
                 st.divider()
-                st.write("🖨️ **Bạn muốn in tem thế nào?**")
 
-                # TÙY CHỌN IN ẤN
                 col_print1, col_print2 = st.columns(2)
 
-                # Option 1: In tem thùng (1 cái)
+                # --- FIX LỖI IN 1 TEM ---
                 with col_print1:
                     if st.button("📦 In 1 Tem Thùng"):
-                        # In 1 cái to
-                        pdf = FPDF(orientation='L', unit='mm', format=(100, 150))  # Khổ tem A6
+                        pdf = FPDF(orientation='L', unit='mm', format=(100, 150))
                         pdf.add_page()
-                        pdf.set_font("Arial", 'B', 24)
-                        pdf.cell(0, 20, txt="TEM LƯU KHO", ln=True, align='C')
+                        pdf.set_font("Helvetica", 'B', 20)  # Dùng font Helvetica chuẩn
 
-                        # Chèn ảnh barcode to
+                        # Dùng hàm remove_accents để tránh lỗi font
+                        title = remove_accents("TEM LUU KHO")
+                        pdf.cell(0, 20, txt=title, ln=True, align='C')
+
                         import tempfile
 
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
@@ -209,31 +200,40 @@ if st.session_state["authentication_status"] is True:
                             pdf.image(tmp.name, x=10, y=30, w=130)
 
                         pdf.set_xy(10, 80)
-                        pdf.set_font("Arial", size=14)
-                        pdf.multi_cell(0, 10,
-                                       txt=f"SP: {sku}\nLô: {info['batch']}\nSL: {info['qty']}\nHSD: {info['hsd']}")
+                        pdf.set_font("Helvetica", size=12)
 
-                        pdf_data = pdf.output(dest='S').encode('latin-1')
-                        st.download_button("⬇️ Tải Tem Thùng (PDF)", pdf_data, f"Pallet_{info['batch']}.pdf",
+                        # Chuẩn bị nội dung text (bỏ dấu tiếng Việt)
+                        content = (
+                            f"SP: {remove_accents(info['sku'])}\n"
+                            f"Lo: {info['batch']}\n"
+                            f"SL: {info['qty']}\n"
+                            f"HSD: {info['hsd']}"
+                        )
+                        pdf.multi_cell(0, 10, txt=content)
+
+                        # SỬA LỖI OUTPUT: Không dùng .encode('latin-1') nữa
+                        try:
+                            pdf_data = pdf.output(dest='S').encode('latin-1')  # Cho bản cũ
+                        except:
+                            pdf_data = pdf.output()  # Cho bản mới (bytearray)
+
+                        st.download_button("⬇️ Tải Tem (PDF)", pdf_data, f"Pallet_{info['batch']}.pdf",
                                            "application/pdf")
 
-                # Option 2: In tem lẻ (In hàng loạt theo số lượng nhập)
+                # --- FIX LỖI IN NHIỀU TEM ---
                 with col_print2:
                     if st.button(f"🏷️ In {info['qty']} Tem Lẻ"):
-                        # Logic tạo file PDF chứa 100 con tem
-                        with st.spinner(f"Đang tạo {info['qty']} con tem..."):
+                        with st.spinner("Đang tạo file PDF..."):
                             pdf_bulk = FPDF(orientation='P', unit='mm', format='A4')
                             pdf_bulk.set_auto_page_break(auto=False, margin=0)
                             pdf_bulk.add_page()
 
-                            # Cấu hình lưới in (3 cột x 8 hàng = 24 tem/trang A4)
                             margin_x, margin_y = 10, 10
                             col_width, row_height = 65, 35
                             cols, rows = 3, 8
                             x, y = margin_x, margin_y
-                            count_x, count_y = 0, 0
+                            count_x, count_y = 0
 
-                            # Lưu ảnh barcode ra file tạm để dùng lại
                             import tempfile
 
                             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_bulk:
@@ -241,18 +241,16 @@ if st.session_state["authentication_status"] is True:
                                 tmp_bulk.write(img.getvalue())
                                 tmp_path = tmp_bulk.name
 
-                            # Vòng lặp in đúng số lượng (qty)
                             for i in range(int(info['qty'])):
-                                # Vẽ khung
                                 pdf_bulk.rect(x, y, col_width, row_height)
-                                # Chèn ảnh
                                 pdf_bulk.image(tmp_path, x=x + 2, y=y + 2, w=col_width - 4, h=row_height - 10)
-                                # Ghi text nhỏ dưới barcode
-                                pdf_bulk.set_font("Arial", size=7)
+                                pdf_bulk.set_font("Helvetica", size=7)
                                 pdf_bulk.set_xy(x, y + row_height - 6)
-                                pdf_bulk.cell(col_width, 5, txt=f"{sku} | Exp: {info['hsd']}", align='C')
 
-                                # Tính vị trí tiếp theo
+                                # Text dưới barcode (Bỏ dấu)
+                                txt_lbl = remove_accents(f"{info['sku']} | Exp: {info['hsd']}")
+                                pdf_bulk.cell(col_width, 5, txt=txt_lbl, align='C')
+
                                 count_x += 1
                                 if count_x < cols:
                                     x += col_width
@@ -261,18 +259,20 @@ if st.session_state["authentication_status"] is True:
                                     x = margin_x
                                     count_y += 1;
                                     y += row_height
-                                    if count_y >= rows:  # Sang trang mới
+                                    if count_y >= rows:
                                         pdf_bulk.add_page();
                                         count_y = 0;
                                         y = margin_y;
                                         x = margin_x
 
-                            bulk_data = pdf_bulk.output(dest='S').encode('latin-1')
-                            st.download_button("⬇️ Tải File In A4 (PDF)", bulk_data, f"Bulk_Labels_{info['batch']}.pdf",
-                                               "application/pdf")
+                            # SỬA LỖI OUTPUT
+                            try:
+                                bulk_data = pdf_bulk.output(dest='S').encode('latin-1')
+                            except:
+                                bulk_data = pdf_bulk.output()
 
-            else:
-                st.info("👈 Hãy nhập thông tin và bấm 'Lưu' để hiện tùy chọn in tem.")
+                            st.download_button("⬇️ Tải A4 (PDF)", bulk_data, f"Bulk_{info['batch']}.pdf",
+                                               "application/pdf")
 
     # === MODULE 2: XUẤT KHO & KIỂM TRA (SCANNER) ===
     elif "Xuất Kho" in current_tab:
