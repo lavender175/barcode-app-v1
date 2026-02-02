@@ -1,8 +1,0 @@
-streamlit
-pandas
-python-barcode
-fpdf2
-opencv-python-headless
-pyzbar
-numpy
-Pillow
