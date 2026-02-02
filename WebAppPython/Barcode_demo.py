@@ -139,7 +139,7 @@ def process_and_decode(image_bytes):
 
     return cv_image, results
 # --- GIAO DIỆN NGƯỜI DÙNG (UI) ---
-st.title("🏭 AUTOMATION BARCODE CENTER PRO V2")
+st.title("🏭 AUTOMATION BARCODE CENTER PRO V3")
 st.caption("Developed by Ken | Tech Stack: Python, Streamlit, OpenCV, Ngrok")
 
 tab1, tab2, tab3 = st.tabs(["🖨️ Tạo Đơn (Manual)", "🏭 Tạo Hàng Loạt (Batch)", "📷 Quét Kiểm Tra (Scanner)"])
