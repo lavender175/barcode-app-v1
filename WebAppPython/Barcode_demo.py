@@ -41,7 +41,23 @@ def connect_db(sheet_name):
             return ws
     except:
         return None
+def check_duplicate_batch(sku, batch):
+    """
+    Kiểm tra xem SKU và Batch đã tồn tại trong sheet Inventory chưa.
+    Trả về True nếu đã tồn tại, False nếu chưa.
+    """
+    ws = connect_db("Inventory")
+    if ws:
+        # Lấy cột SKU|Batch (Giả sử là cột C - index 2)
+        records = ws.get_all_records()
+        if not records:
+            return False
 
+        full_code = f"{sku}|{batch}"
+        # Kiểm tra nhanh trong danh sách hiện tại
+        exists = any(item.get('FullCode') == full_code for item in records)
+        return exists
+    return False
 
 # --- 3. CẤU HÌNH USER ---
 config_user = {
@@ -83,12 +99,13 @@ if st.session_state["authentication_status"] is True:
             rv = BytesIO()
             BARCODE_CLASS = barcode.get_barcode_class('code128')
 
+            # Cấu hình tối ưu cho máy in văn phòng + Máy quét Zebra
             options = {
-                "module_width": 0.5,  # <--- Tăng độ dày (Cũ là 0.2 hoặc 0.3)
-                "module_height": 15.0,
+                "module_width": 0.5,  # Độ dày vạch (0.5 là "điểm ngọt" cho giấy A4)
+                "module_height": 18.0,  # Tăng nhẹ chiều cao để quét nhanh hơn
                 "font_size": 10,
-                "text_distance": 5.0,
-                "quiet_zone": 5.0,  # <--- Tăng khoảng trắng 2 đầu
+                "text_distance": 4.0,
+                "quiet_zone": 6.5,  # Tăng vùng trắng hai đầu để Zebra dễ định vị
                 "write_text": True
             }
 
@@ -142,6 +159,8 @@ if st.session_state["authentication_status"] is True:
         return img, results
 
 
+
+
     # --- GIAO DIỆN CHÍNH ---
     st.header(f"🥛 HỆ THỐNG QUẢN LÝ KHO ({datetime.now().strftime('%d/%m/%Y')})")
 
@@ -170,134 +189,119 @@ if st.session_state["authentication_status"] is True:
             loc = st.selectbox("Vị trí lưu kho:", ["Kho Lạnh A", "Kho Mát B", "Kệ Pallet C1"])
 
             full_code = f"{sku}|{batch}"
-            st.info(f"🆔 Mã lô: {full_code}")
+            st.info(f"🆔 Mã lô dự kiến: {full_code}")
 
             if st.button("💾 Lưu Phiếu Nhập Kho", type="primary"):
-                ws = connect_db("Inventory")
-                if ws:
-                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    ws.append_row([now, user_name, full_code, "IMPORT", str(nsx), str(hsd), loc, qty])
-                    st.toast(f"Đã nhập {qty} sản phẩm!", icon="✅")
-                    # Lưu session để dùng cho cột bên phải
-                    st.session_state['last_import'] = {'code': full_code, 'qty': qty, 'batch': batch, 'hsd': str(hsd),
-                                                       'sku': sku}
+                # BƯỚC 1: KIỂM TRA TRÙNG
+                if check_duplicate_batch(sku, batch):
+                    st.error(f"❌ Lô hàng '{batch}' của sản phẩm này đã có trong hệ thống!")
                 else:
-                    st.error("Lỗi kết nối Google Sheet!")
+                    ws = connect_db("Inventory")
+                    if ws:
+                        try:
+                            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            ws.append_row([now, user_name, full_code, "IMPORT", str(nsx), str(hsd), loc, qty])
+                            st.toast(f"Đã nhập {qty} sản phẩm thành công!", icon="✅")
+                            st.session_state['last_import'] = {
+                                'code': full_code, 'qty': qty, 'batch': batch,
+                                'hsd': str(hsd), 'sku': sku
+                            }
+                        except Exception as e:
+                            st.error(f"Lỗi khi ghi vào Google Sheets: {e}")
+                    else:
+                        st.error("Không thể kết nối Database!")
 
         with c2:
             st.markdown("#### 2. Tùy chọn In Tem")
-
             if 'last_import' in st.session_state:
                 info = st.session_state['last_import']
-                st.success(f"✅ Đã nhập lô: {info['batch']}")
+                st.success(f"✅ Sẵn sàng in tem cho lô: {info['batch']}")
 
+                # Tạo barcode preview
                 img = create_barcode(info['code'])
-                st.image(img, caption=f"Mã: {info['code']}", width=350)
+                if img:
+                    st.image(img, caption=f"Mã QR/Barcode: {info['code']}", width=300)
+
                 st.divider()
+                cp1, cp2 = st.columns(2)
 
-                col_print1, col_print2 = st.columns(2)
-
-                # --- NÚT 1: IN TEM THÙNG (Đã Fix lỗi bytes) ---
-                with col_print1:
+                with cp1:
                     if st.button("📦 In 1 Tem Thùng"):
                         try:
                             pdf = FPDF(orientation='L', unit='mm', format=(100, 150))
                             pdf.add_page()
-                            pdf.set_font("Helvetica", 'B', 20)
-
-                            # Tiêu đề không dấu
-                            pdf.cell(0, 20, txt=remove_accents("TEM LUU KHO"), ln=True, align='C')
+                            pdf.set_font("Helvetica", 'B', 16)
+                            pdf.cell(0, 10, txt=remove_accents("PHIEU LUU KHO (PALLET)"), ln=True, align='C')
 
                             import tempfile
 
                             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
                                 img.seek(0)
                                 tmp.write(img.getvalue())
-                                pdf.image(tmp.name, x=10, y=30, w=130)
+                                pdf.image(tmp.name, x=10, y=20, w=130)
 
-                            pdf.set_xy(10, 80)
-                            pdf.set_font("Helvetica", size=12)
-                            content = f"SP: {remove_accents(info['sku'])}\nLo: {info['batch']}\nSL: {info['qty']}\nHSD: {info['hsd']}"
-                            pdf.multi_cell(0, 10, txt=content)
+                            pdf.set_xy(10, 75)
+                            pdf.set_font("Helvetica", size=11)
+                            content = f"SKU: {info['sku']}\nLot: {info['batch']}\nQty: {info['qty']}\nExp: {info['hsd']}"
+                            pdf.multi_cell(0, 8, txt=remove_accents(content))
 
-                            # --- ĐOẠN QUAN TRỌNG: ÉP KIỂU BYTES ---
-                            try:
-                                # FPDF2 (Mới): output() trả về bytearray -> Ép sang bytes
-                                pdf_data = bytes(pdf.output())
-                            except:
-                                # FPDF (Cũ): output(dest='S') trả về string -> Encode sang bytes
-                                pdf_data = pdf.output(dest='S').encode('latin-1')
-
-                            # Chỉ hiện nút tải nếu có dữ liệu chuẩn
-                            st.download_button("⬇️ Tải Tem (PDF)", pdf_data, f"Pallet_{info['batch']}.pdf",
-                                               "application/pdf")
-
+                            pdf_data = bytes(pdf.output())
+                            st.download_button("⬇️ Tải Tem Thùng", pdf_data, f"Pallet_{info['batch']}.pdf")
                         except Exception as e:
-                            st.error(f"Lỗi tạo PDF: {e}")
+                            st.error(f"Lỗi in tem thùng: {e}")
 
-                # --- NÚT 2: IN TEM LẺ (Đã Fix lỗi bytes) ---
-                with col_print2:
+                with cp2:
                     if st.button(f"🏷️ In {info['qty']} Tem Lẻ"):
-                        try:
-                            with st.spinner("Đang xử lý..."):
+                        try:  # BẮT ĐẦU KHỐI TRY ĐỂ SỬA LỖI TRONG ẢNH CỦA ÔNG
+                            with st.spinner("Đang tính toán layout A4..."):
                                 pdf_bulk = FPDF(orientation='P', unit='mm', format='A4')
                                 pdf_bulk.set_auto_page_break(auto=False, margin=0)
                                 pdf_bulk.add_page()
 
-                                margin_x, margin_y = 10, 10
-                                col_width, row_height = 65, 35
-                                cols, rows = 3, 8
-                                x, y = margin_x, margin_y
-
-                                # --- SỬA LỖI TẠI ĐÂY ---
-                                count_x, count_y = 0, 0
-                                # -----------------------
+                                # Layout tối ưu cho Zebra: 3 cột x 7 hàng
+                                mx, my = 12, 12
+                                cw, rh = 62, 40
+                                cols, rows = 3, 7
+                                x, y = mx, my
+                                cx, cy = 0, 0
 
                                 import tempfile
 
-                                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_bulk:
+                                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_b:
                                     img.seek(0)
-                                    tmp_bulk.write(img.getvalue())
-                                    tmp_path = tmp_bulk.name
+                                    tmp_b.write(img.getvalue())
+                                    t_path = tmp_b.name
 
                                 for i in range(int(info['qty'])):
-                                    # --- XÓA HOẶC COMMENT DÒNG NÀY ĐỂ BỎ KHUNG ---
-                                    # pdf_bulk.rect(x, y, col_width, row_height) <--- DÒNG THỦ PHẠM
-
-                                    # Chỉ chèn ảnh và text thôi
-                                    pdf_bulk.image(tmp_path, x=x + 5, y=y + 2, w=col_width - 10,
-                                                   h=row_height - 10)  # Co ảnh lại chút cho thoáng
+                                    # KHÔNG DÙNG pdf_bulk.rect ĐỂ BỎ KHUNG
+                                    pdf_bulk.image(t_path, x=x + 2, y=y + 5, w=cw - 4)
 
                                     pdf_bulk.set_font("Helvetica", size=7)
-                                    pdf_bulk.set_xy(x, y + row_height - 6)
-                                    txt_lbl = remove_accents(f"{info['sku']} | Exp: {info['hsd']}")
-                                    pdf_bulk.cell(col_width, 5, txt=txt_lbl, align='C')
+                                    pdf_bulk.set_xy(x, y + rh - 8)
+                                    label = f"{info['sku']} | Exp: {info['hsd']}"
+                                    pdf_bulk.cell(cw, 5, txt=remove_accents(label), align='C')
 
-                                    count_x += 1
-                                    if count_x < cols:
-                                        x += col_width
+                                    cx += 1
+                                    if cx < cols:
+                                        x += cw
                                     else:
-                                        count_x = 0;
-                                        x = margin_x
-                                        count_y += 1;
-                                        y += row_height
-                                        if count_y >= rows:
+                                        cx = 0;
+                                        x = mx;
+                                        cy += 1;
+                                        y += rh
+                                        if cy >= rows:
                                             pdf_bulk.add_page();
-                                            count_y = 0;
-                                            y = margin_y;
-                                            x = margin_x
+                                            cy = 0;
+                                            y = my;
+                                            x = mx
 
-                                # Xử lý output an toàn
-                                try:
-                                    bulk_data = bytes(pdf_bulk.output())
-                                except:
-                                    bulk_data = pdf_bulk.output(dest='S').encode('latin-1')
+                                bulk_bytes = bytes(pdf_bulk.output())
+                                st.download_button("⬇️ Tải A4 PDF", bulk_bytes, f"Bulk_{info['batch']}.pdf")
 
-                                st.download_button("⬇️ Tải A4 (PDF)", bulk_data, f"Bulk_{info['batch']}.pdf",
-                                                   "application/pdf")
-
-                        except Exception as e:
-                            st.error(f"Lỗi in hàng loạt: {e}")
+                        except Exception as e:  # KHỐI EXCEPT BẮT BUỘC PHẢI CÓ
+                            st.error(f"Lỗi xử lý PDF hàng loạt: {e}")
+                        finally:  # KHỐI FINALLY (Tùy chọn nhưng nên có để code sạch)
+                            pass
 
     # === MODULE 2: XUẤT KHO & KIỂM TRA (SCANNER) ===
     elif "Xuất Kho" in current_tab:
