@@ -19,64 +19,68 @@ import tempfile
 # --- 1. CẤU HÌNH HỆ THỐNG ---
 st.set_page_config(page_title="WMS Demo - Vinamilk", layout="wide", page_icon="🥛")
 
-# --- CSS TẠO GIAO DIỆN APP (LOGO TRÁI - MENU PHẢI) ---
+# --- CSS "PHẪU THUẬT" GIAO DIỆN HEADER (LOGO TRÁI - MENU PHẢI) ---
 st.markdown("""
 <style>
-    /* 1. Tùy chỉnh Header mặc định của Streamlit */
+    /* 1. Tùy chỉnh thanh Header nền tảng */
     header[data-testid="stHeader"] {
-        /* Màu nền Header (Trắng hoặc Xám tùy theme) */
         background-color: var(--background-color);
-        /* Đường viền dưới cho giống App */
         border-bottom: 1px solid #f0f2f6;
-        /* Đảm bảo nó luôn nằm trên cùng */
-        z-index: 999999;
+        height: 60px !important; /* Cố định chiều cao cho đẹp */
+        z-index: 999990;
     }
 
-    /* 2. CHÈN LOGO VÀO GÓC TRÁI HEADER (QUAN TRỌNG NHẤT) */
+    /* 2. ĐÁ NÚT MENU (3 GẠCH) SANG GÓC PHẢI */
+    [data-testid="stSidebarCollapsedControl"] {
+        position: absolute !important;
+        right: 15px !important; /* Cách lề phải 15px */
+        left: auto !important;  /* Hủy bỏ vị trí mặc định bên trái */
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        z-index: 999999 !important;
+        color: #154360 !important; /* Màu xanh Vinamilk */
+        display: block !important;
+    }
+    
+    /* 3. CHÈN LOGO VÀO GÓC TRÁI */
     header[data-testid="stHeader"]::before {
         content: "";
-        /* Link Logo (Thay bằng link logo thật của ông nếu cần) */
+        /* Link Logo */
         background-image: url('https://cdn-icons-png.flaticon.com/512/2554/2554045.png');
         background-size: contain;
         background-repeat: no-repeat;
         position: absolute;
-        left: 20px;       /* Cách lề trái 20px */
-        top: 50%;         /* Căn giữa chiều dọc */
+        left: 15px;       /* Nằm góc trái */
+        top: 50%;
         transform: translateY(-50%);
-        width: 40px;      /* Kích thước logo */
-        height: 40px;
-        z-index: 999;
+        width: 35px;      /* Kích thước logo */
+        height: 35px;
+        z-index: 999999;
+        pointer-events: none; /* QUAN TRỌNG: Không cho bấm vào logo để tránh nhầm lẫn */
     }
 
-    /* 3. Dời nút 3 gạch (Hamburger) qua phải và đổi màu cho đẹp (nếu cần) */
-    [data-testid="stSidebarCollapsedControl"] {
-        color: #154360 !important; /* Màu xanh Vinamilk */
-    }
+    /* 4. Ẩn các nút thừa của Streamlit ở góc phải (Manage app, Deploy...) */
+    .stAppDeployButton { display: none; }
+    [data-testid="stHeaderActionElements"] { display: none; }
 
-    /* 4. Dashboard 1 hàng ngang trên Mobile */
+    /* 5. Tinh chỉnh Dashboard 1 hàng ngang (Scroll) */
     [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
         overflow-x: auto !important;
         padding-bottom: 5px;
     }
     
-    /* 5. Tinh chỉnh lại khoảng cách nội dung để không bị Header che */
+    /* 6. Đẩy nội dung xuống để không bị Header che */
     .block-container {
-        padding-top: 3rem !important; 
+        padding-top: 4rem !important; 
     }
     
-    /* Ẩn nút Manage App / Deploy thừa thãi ở góc phải (nếu muốn sạch sẽ) */
-    .stAppDeployButton {
-        display: none;
-    }
-    
-    /* Tiêu đề trang con */
+    /* Tiêu đề trang */
     .main-header {
         font-size: 22px !important; 
         font-weight: 700; 
         color: var(--text-color);
         margin-bottom: 15px;
-        margin-top: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -184,21 +188,20 @@ authenticator.login()
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     
-    # === MENU SIDEBAR (NƠI CHỨA NÚT BẤM) ===
-    # Khi bấm nút 3 gạch, cái này sẽ trượt ra
+    # === MENU SIDEBAR (TRƯỢT TỪ TRÁI RA) ===
+    # Lúc này nút 3 gạch đã bị CSS đẩy sang phải, nhưng chức năng vẫn mở cái này
     with st.sidebar:
-        # Không cần st.image ở đây nữa vì đã có trên Header dính rồi
+        st.write("---") # Spacer
         st.markdown(f"👤 **{user_name}**")
         
         current_tab = st.radio(
-            "CHỨC NĂNG:",
+            "CHỌN CHỨC NĂNG:",
             ["Dashboard", "Nhập Kho", "Xuất Kho", "Truy Xuất"],
             index=0
         )
-        
+        st.caption("ℹ️ Chọn xong chạm ra ngoài để đóng menu")
         st.divider()
         authenticator.logout('Đăng xuất', 'sidebar')
-        st.caption("v8.0 Mobile Native")
 
     # ================= MODULE 1: NHẬP KHO =================
     if current_tab == "Nhập Kho":
