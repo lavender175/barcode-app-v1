@@ -19,56 +19,58 @@ import tempfile
 # --- 1. CẤU HÌNH HỆ THỐNG ---
 st.set_page_config(page_title="WMS Demo - Vinamilk", layout="wide", page_icon="🥛")
 
-# --- CSS TÙY CHỈNH: MENU NGANG & GIAO DIỆN MOBILE ---
+# --- CSS TÙY CHỈNH (HỖ TRỢ LIGHT/DARK MODE TỰ ĐỘNG) ---
 st.markdown("""
 <style>
-    /* 1. Ẩn Sidebar mặc định */
+    /* 1. Ẩn Sidebar và Header thừa */
     [data-testid="stSidebar"] {display: none;}
     [data-testid="collapsedControl"] {display: none;}
 
-    /* 2. Menu Ngang (Navbar) dạng thẻ */
-    div[data-testid="stRadio"] > label {display: none;} /* Ẩn nhãn 'Menu' */
+    /* 2. Menu Ngang (Navbar) sử dụng biến hệ thống */
+    div[data-testid="stRadio"] > label {display: none;}
     div[role="radiogroup"] {
         display: flex;
         flex-direction: row;
         gap: 10px;
-        overflow-x: auto; 
+        overflow-x: auto;
         padding-bottom: 5px;
         justify-content: center;
     }
 
     div[role="radiogroup"] > label {
-        background-color: #f0f2f6 !important; /* Luôn nền sáng */
+        /* Dùng biến này để tự đổi màu theo theme sáng/tối */
+        background-color: var(--secondary-background-color) !important;
+        color: var(--text-color) !important;
         padding: 8px 20px;
         border-radius: 20px;
-        border: 1px solid #e0e0e0;
+        border: 1px solid var(--secondary-background-color);
         transition: all 0.3s;
     }
 
-    /* QUAN TRỌNG: Ép màu chữ đen cho nút chưa chọn */
+    /* Chỉnh màu chữ bên trong nút */
     div[role="radiogroup"] > label > div[data-testid="stMarkdownContainer"] > p {
-        color: #31333F !important; /* Màu đen xám */
         font-weight: 600;
         font-size: 16px;
+        margin: 0;
     }
 
-    /* Highlight tab đang chọn */
+    /* Hiệu ứng khi chọn (Highlight) - Giữ màu xanh Vinamilk */
     div[role="radiogroup"] label[data-checked="true"] {
-        background-color: #154360 !important; /* Nền xanh đậm */
+        background-color: #154360 !important;
         border-color: #154360 !important;
     }
 
-    /* Ép màu chữ trắng cho nút ĐÃ CHỌN */
+    /* Ép chữ màu trắng khi đã chọn (để nổi trên nền xanh) */
     div[role="radiogroup"] label[data-checked="true"] > div[data-testid="stMarkdownContainer"] > p {
-        color: white !important;
+        color: white !important; 
     }
 
     /* 3. Tinh chỉnh Header */
     .main-header {
-        font-size: 22px !important; 
+        font-size: 24px !important; 
         font-weight: 700; 
-        color: #154360; 
-        margin-top: -20px;
+        color: var(--text-color); /* Tự đổi màu chữ tiêu đề */
+        margin-top: -30px;
         text-align: center;
     }
     .block-container {
@@ -120,12 +122,14 @@ def check_duplicate_batch(sku, batch):
     return False
 
 
-# HÀM LẤY BATCH VÀ TỒN KHO THỰC TẾ
 def get_batch_stock_info(target_sku):
     ws = connect_db("Inventory")
     if not ws: return []
     df = pd.DataFrame(ws.get_all_records())
     if df.empty: return []
+
+    # --- FIX QUAN TRỌNG: ÉP KIỂU STRING ĐỂ TRÁNH LỖI VỚI MÃ SỐ ---
+    df['FullCode'] = df['FullCode'].astype(str)
 
     df['SKU'] = df['FullCode'].apply(lambda x: x.split('|')[0] if '|' in x else x)
     df['Batch'] = df['FullCode'].apply(lambda x: x.split('|')[1] if '|' in x else 'Unknown')
@@ -135,21 +139,18 @@ def get_batch_stock_info(target_sku):
     df_sku['Real'] = df_sku.apply(lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']) else x['Qty'], axis=1)
 
     summary = df_sku.groupby('Batch')['Real'].sum().reset_index()
-    # Lọc lô còn hàng (>0)
     avail_df = summary[summary['Real'] > 0].copy()
 
     valid = []
     for index, row in avail_df.iterrows():
         b = row['Batch']
         q = row['Real']
-        # Lấy HSD
         row_imp = df[(df['Batch'] == b) & (df['Action'] == 'IMPORT')].head(1)
         hsd = row_imp.iloc[0]['HSD'] if not row_imp.empty else "N/A"
         valid.append({'batch': b, 'qty': q, 'hsd': hsd})
 
-    # Sắp xếp theo HSD (FEFO)
     valid.sort(key=lambda x: x['hsd'])
-    return valid  # Trả về list các dict [{'batch':..., 'qty':..., 'hsd':...}]
+    return valid
 
 
 def create_barcode(code):
@@ -198,7 +199,7 @@ authenticator.login()
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
 
-    # === HEADER NAVIGATOR (MENU NGANG) ===
+    # === HEADER NAVIGATOR ===
     c_logo, c_menu, c_logout = st.columns([1, 6, 1], vertical_alignment="center")
     with c_logo:
         st.image("https://cdn-icons-png.flaticon.com/512/2554/2554045.png", width=45)
@@ -290,7 +291,6 @@ if st.session_state["authentication_status"] is True:
                             except:
                                 st.error("Lỗi tạo PDF")
             else:
-                # --- KHÔI PHỤC ICON WAITING ---
                 st.info("👈 Vui lòng nhập thông tin bên trái.")
                 c_wait1, c_wait2, c_wait3 = st.columns([1, 2, 1])
                 with c_wait2:
@@ -319,49 +319,35 @@ if st.session_state["authentication_status"] is True:
                     sku = raw.split("|")[0] if "|" in raw else raw
                     if sku in MOCK_DB_PO[po]['BOM']:
                         st.success(f"✅ ĐÚNG VẬT TƯ: {sku}")
-
-                        # LOGIC CHỌN BATCH & KIỂM TRA TỒN KHO
-                        final_code = None
-                        max_qty = 0  # Tồn kho tối đa của lô được chọn
+                        final_code = None;
+                        max_qty = 0
 
                         if "|" in raw:
-                            # Quét full code -> Check tồn của lô này
                             batch_in_code = raw.split("|")[1]
-                            stock_data = get_batch_stock_info(sku)  # Lấy list tồn
-                            # Tìm xem lô này có tồn tại và còn hàng ko
+                            stock_data = get_batch_stock_info(sku)
                             found_batch = next((item for item in stock_data if item['batch'] == batch_in_code), None)
                             if found_batch:
-                                final_code = raw
+                                final_code = raw;
                                 max_qty = found_batch['qty']
                                 st.caption(f"Lô: {batch_in_code} - Tồn: {max_qty}")
                             else:
-                                st.error(f"❌ Lô {batch_in_code} đã hết hàng hoặc không tồn tại!")
+                                st.error(f"❌ Lô {batch_in_code} đã hết hàng!")
                         else:
-                            # Quét thiếu -> Chọn lô FEFO
                             st.warning("⚠️ Thiếu Batch -> Chọn lô (FEFO):")
                             stock_data = get_batch_stock_info(sku)
                             if stock_data:
-                                # Tạo list hiển thị có kèm số lượng tồn
-                                options = [f"{i['batch']} (Tồn: {i['qty']} - HSD: {i['hsd']})" for i in stock_data]
-                                sel = st.selectbox("Chọn lô:", options)
-
-                                # Parse lại dữ liệu đã chọn
-                                sel_batch = sel.split(" (")[0]
-                                sel_qty = int(sel.split("Tồn: ")[1].split(" -")[0])
-
-                                final_code = f"{sku}|{sel_batch}"
-                                max_qty = sel_qty
+                                opts = [f"{i['batch']} (Tồn: {i['qty']} - HSD: {i['hsd']})" for i in stock_data]
+                                sel = st.selectbox("Chọn lô:", opts)
+                                final_code = f"{sku}|{sel.split(' (')[0]}"
+                                max_qty = int(sel.split("Tồn: ")[1].split(" -")[0])
                             else:
                                 st.error("❌ Hết hàng tồn kho!")
 
-                        # INPUT SỐ LƯỢNG & NÚT XUẤT
                         if final_code and max_qty > 0:
                             st.divider()
                             c_q, c_b = st.columns([1, 1])
                             with c_q:
-                                # Max value chặn không cho nhập lố
                                 q_out = st.number_input("Thực xuất (Kg):", min_value=1, max_value=int(max_qty), value=1)
-                                st.caption(f"Tối đa: {max_qty}")
                             with c_b:
                                 st.write("");
                                 st.write("")
@@ -374,16 +360,14 @@ if st.session_state["authentication_status"] is True:
                     else:
                         st.error("⛔ Sai vật tư!")
         else:
-            # --- XUẤT LẺ ---
             scan_type = st.radio("Input:", ["Súng", "Cam"], horizontal=True)
             raw = st.text_input("Mã:") if scan_type == "Súng" else (
                 lambda x: decode_img(x.getvalue())[1][0] if x else None)(st.camera_input("Cam"))
 
             if raw:
                 st.markdown(f"### 🔎 `{raw}`")
-                final_code = None
+                final_code = None;
                 max_qty = 0
-
                 sku_check = raw.split("|")[0] if "|" in raw else raw
                 stock_data = get_batch_stock_info(sku_check)
 
@@ -405,14 +389,13 @@ if st.session_state["authentication_status"] is True:
 
                 if final_code and max_qty > 0:
                     q = st.number_input("SL Xuất:", 1, max_value=int(max_qty), value=1)
-                    st.caption(f"Max: {max_qty}")
                     if st.button("🚀 XUẤT"):
                         connect_db("Inventory").append_row(
                             [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_name, final_code, "EXPORT", "", "",
                              "Retail", -q])
                         st.toast("Đã xuất!", icon="🚛")
 
-    # ================= MODULE 3: DASHBOARD (KHÔI PHỤC TAB) =================
+    # ================= MODULE 3: DASHBOARD =================
     elif current_tab == "Dashboard":
         st.markdown(f'<p class="main-header">📊 DASHBOARD</p>', unsafe_allow_html=True)
         ws_inv = connect_db("Inventory");
@@ -421,15 +404,11 @@ if st.session_state["authentication_status"] is True:
         if ws_inv:
             df = pd.DataFrame(ws_inv.get_all_records())
             if not df.empty:
-                # --- [FIX BUG QUAN TRỌNG] ---
-                # 1. Ép kiểu FullCode sang chuỗi (String) TRƯỚC KHI xử lý
+                # --- FIX CRASH: ÉP KIỂU STRING ---
                 df['FullCode'] = df['FullCode'].astype(str)
 
-                # 2. Xử lý số liệu
                 df['Qty'] = pd.to_numeric(df['Qty'], errors='coerce').fillna(0)
                 df['Real'] = df.apply(lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']) else x['Qty'], axis=1)
-
-                # 3. Tách chuỗi an toàn (Giờ x chắc chắn là string nên không lỗi nữa)
                 df['SKU'] = df['FullCode'].apply(lambda x: x.split('|')[0] if '|' in x else x)
 
                 total = df.groupby('SKU')['Real'].sum();
@@ -442,9 +421,7 @@ if st.session_state["authentication_status"] is True:
 
                 st.divider()
 
-                # --- TABS ---
                 t1, t2 = st.tabs(["📝 Nhật Ký Kho", "🏭 Tiến Độ Sản Xuất"])
-
                 with t1:
                     st.dataframe(df.sort_values('Timestamp', ascending=False).head(10)[
                                      ['Timestamp', 'FullCode', 'Action', 'Qty', 'User']], use_container_width=True,
@@ -455,14 +432,14 @@ if st.session_state["authentication_status"] is True:
                         df_p = pd.DataFrame(ws_po.get_all_records())
 
 
-                        # --- [FIX MÀU CHỮ BẢNG] ---
+                        # --- FIX MÀU CHỮ: Ép màu đen cho nền sáng ---
                         def color_status(val):
                             if val == 'Done':
-                                return 'background-color: #d4edda; color: black;'  # Thêm color: black
+                                return 'background-color: #d4edda; color: black;'
                             elif val == 'Pending':
-                                return 'background-color: #fff3cd; color: black;'  # Thêm color: black
+                                return 'background-color: #fff3cd; color: black;'
                             elif val == 'Running':
-                                return 'background-color: #cce5ff; color: black;'  # Thêm color: black
+                                return 'background-color: #cce5ff; color: black;'
                             return ''
 
 
@@ -478,10 +455,13 @@ if st.session_state["authentication_status"] is True:
             ws = connect_db("Inventory")
             if ws:
                 df = pd.DataFrame(ws.get_all_records())
-                sub = df[df['FullCode'].str.contains(q, na=False)].copy()
+                # --- FIX SEARCH: Ép kiểu string trước khi tìm ---
+                df['FullCode'] = df['FullCode'].astype(str)
+                sub = df[df['FullCode'].str.contains(q, case=False, na=False)].copy()
+
                 if not sub.empty:
                     sub['Qty'] = pd.to_numeric(sub['Qty'], errors='coerce')
-                    sub['Real'] = sub.apply(lambda x: -x['Qty'] if 'EXPORT' in x['Action'] else x['Qty'], axis=1)
+                    sub['Real'] = sub.apply(lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']) else x['Qty'], axis=1)
                     sub['Time'] = pd.to_datetime(sub['Timestamp'])
 
                     st.success(f"Tìm thấy: {len(sub)} giao dịch")
