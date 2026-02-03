@@ -199,7 +199,7 @@ if st.session_state["authentication_status"] is True:
     st.title("HỆ THỐNG QUẢN LÝ KHO & SẢN XUẤT")
     # ✅ CHỈ GIỮ LẠI TIÊU ĐỀ:
     # st.title(f"{current_tab}")
-    st.divider()
+    # st.divider()
 
     # ================= MODULE 1: NHẬP KHO =================
     if "Nhập Kho" in current_tab:
