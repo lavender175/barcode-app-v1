@@ -598,95 +598,94 @@ if st.session_state["authentication_status"] is True:
             st.error("Mất kết nối với Google Sheets!")
         # ================= MODULE 4: TRUY XUẤT NGUỒN GỐC (ISO/HACCP) =================
     elif "Truy Xuất" in current_tab:
-        st.subheader("🔍 Truy Xuất Nguồn Gốc (Traceability System)")
-        st.caption("Tiêu chuẩn ISO 22000/HACCP: Theo dõi dòng chảy của lô hàng từ đầu vào đến đầu ra.")
+        st.subheader("🔍 Truy Xuất Nguồn Gốc (Traceability)")
 
-        # Layout nhập liệu
-        col_search, col_info = st.columns([1, 2])
+        # 1. Input tìm kiếm
+        batch_query = st.text_input("Nhập số Batch cần tra (VD: LOT-3854):", placeholder="Nhập mã lô...")
 
-        with col_search:
-            st.markdown("#### 1. Nhập mã Lô/Batch cần tra cứu")
-            batch_query = st.text_input("Nhập số Batch (VD: LOT-1234):", placeholder="Scan or Type Batch ID...")
+        if batch_query:
+            ws = connect_db("Inventory")
+            if ws:
+                # Lấy dữ liệu
+                df = pd.DataFrame(ws.get_all_records())
 
-            if batch_query:
-                ws = connect_db("Inventory")
-                if ws:
-                    df = pd.DataFrame(ws.get_all_records())
+                # Lọc theo Batch (Tìm tương đối)
+                # Chuyển FullCode thành string để tránh lỗi
+                trace_data = df[df['FullCode'].astype(str).str.contains(batch_query, case=False, na=False)].copy()
 
-                    # Lọc dữ liệu theo Batch (Tìm tương đối)
-                    # Chuyển FullCode thành chuỗi để tránh lỗi
-                    trace_data = df[df['FullCode'].astype(str).str.contains(batch_query, case=False, na=False)]
+                if not trace_data.empty:
+                    # --- XỬ LÝ SỐ LIỆU AN TOÀN ---
+                    # 1. Convert Qty sang số
+                    trace_data['Qty'] = pd.to_numeric(trace_data['Qty'], errors='coerce').fillna(0)
+                    # 2. Convert Timestamp sang dạng Thời gian chuẩn
+                    trace_data['Timestamp'] = pd.to_datetime(trace_data['Timestamp'], errors='coerce')
 
-                    if not trace_data.empty:
-                        # Tìm thông tin gốc (Lần nhập đầu tiên)
-                        first_import = trace_data[trace_data['Action'] == 'IMPORT'].sort_values('Timestamp').iloc[0]
+                    # 3. Tính Real_Qty (Số âm dương)
+                    trace_data['Real_Qty'] = trace_data.apply(
+                        lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']).upper() else x['Qty'], axis=1
+                    )
 
-                        # Tính toán tồn kho của riêng lô này
-                        trace_data['Qty'] = pd.to_numeric(trace_data['Qty'], errors='coerce')
-                        trace_data['Real_Qty'] = trace_data.apply(
-                            lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']).upper() else x['Qty'], axis=1
-                        )
-                        balance = trace_data['Real_Qty'].sum()
+                    # 4. Tính tồn kho hiện tại
+                    balance = trace_data['Real_Qty'].sum()
 
-                        # Hiển thị thẻ tóm tắt bên phải
-                        with col_info:
-                            st.info(f"🔎 Kết quả tra cứu: **{first_import['FullCode']}**")
-                            m1, m2, m3 = st.columns(3)
-                            m1.metric("Ngày Nhập Kho", pd.to_datetime(first_import['Timestamp']).strftime("%d/%m/%Y"))
-                            m2.metric("Hạn Sử Dụng", first_import['HSD'])
-                            # Logic màu sắc: Còn hàng (Xanh), Hết hàng (Xám), Âm (Đỏ - Lỗi)
-                            color_balance = "normal" if balance > 0 else "off"
-                            m3.metric("Tồn Kho Hiện Tại", f"{balance} Unit",
-                                      delta="Available" if balance > 0 else "Out of Stock", delta_color=color_balance)
+                    # --- HIỂN THỊ THÔNG TIN (FIX LỖI CRASH KHI KHÔNG CÓ IMPORT) ---
+                    st.success(f"🔎 Tìm thấy {len(trace_data)} giao dịch liên quan đến: **{batch_query}**")
 
-                            st.divider()
-                            st.markdown("**📜 Dòng Chảy Vật Tư (Transaction History):**")
+                    # Tìm thông tin nhập kho (Nếu có)
+                    imports = trace_data[trace_data['Action'] == 'IMPORT'].sort_values('Timestamp')
 
-                            # Hiển thị dạng Timeline đơn giản
-                            for index, row in trace_data.iterrows():
-                                icon = "📥" if row['Action'] == 'IMPORT' else "🏭" if 'PO' in row['Action'] else "🚛"
-                                event_color = "green" if row['Action'] == 'IMPORT' else "orange" if 'PO' in row[
-                                    'Action'] else "blue"
+                    col_info1, col_info2, col_info3 = st.columns(3)
 
-                                st.markdown(f"""
-                                    :{event_color}[**{pd.to_datetime(row['Timestamp']).strftime('%H:%M %d/%m')}**] | {icon} **{row['Action']}** — SL: **{row['Qty']}** — Vị trí: *{row['Location']}* — User: {row['User']}
-                                    """)
+                    # Cột 1: Ngày nhập (Xử lý trường hợp không có Import)
+                    if not imports.empty:
+                        first_date = imports.iloc[0]['Timestamp'].strftime("%d/%m/%Y")
+                        col_info1.metric("Ngày Nhập Kho", first_date)
                     else:
-                        st.warning("⚠️ Không tìm thấy dữ liệu về lô hàng này!")
+                        col_info1.metric("Ngày Nhập Kho", "N/A", "Chưa có dữ liệu nhập", delta_color="off")
+
+                    # Cột 2: Hạn sử dụng (Lấy dòng mới nhất bất kỳ để check HSD)
+                    any_hsd = trace_data.iloc[0]['HSD']
+                    col_info2.metric("Hạn Sử Dụng", any_hsd)
+
+                    # Cột 3: Tồn kho
+                    col_info3.metric("Tồn Hiện Tại", f"{balance} Unit",
+                                     delta="Available" if balance > 0 else "Negative/Sold",
+                                     delta_color="normal" if balance >= 0 else "inverse")
+
+                    st.divider()
+
+                    # --- VẼ BIỂU ĐỒ (VISUALIZATION) ---
+                    st.subheader("📈 Biểu Đồ Biến Động Số Dư")
+
+                    # Sắp xếp theo thời gian cũ -> mới để vẽ đường đi
+                    chart_data = trace_data.sort_values("Timestamp").copy()
+
+                    # Tính lũy kế (Running Balance)
+                    chart_data['Running_Balance'] = chart_data['Real_Qty'].cumsum()
+
+                    # Vẽ biểu đồ
+                    base = alt.Chart(chart_data).encode(
+                        x=alt.X('Timestamp:T', title='Thời gian', axis=alt.Axis(format='%H:%M %d/%m')))
+
+                    line = base.mark_line(point=True, strokeWidth=3).encode(
+                        y=alt.Y('Running_Balance:Q', title='Tồn kho'),
+                        tooltip=['Timestamp', 'Action', 'Qty', 'Running_Balance', 'User']
+                    )
+
+                    # Tô màu vùng dưới
+                    area = base.mark_area(opacity=0.3, color='lightblue').encode(
+                        y='Running_Balance:Q'
+                    )
+
+                    st.altair_chart(area + line, use_container_width=True)
+
+                    # --- BẢNG CHI TIẾT ---
+                    with st.expander("Xem chi tiết các dòng giao dịch"):
+                        st.dataframe(trace_data[['Timestamp', 'Action', 'Qty', 'User', 'Location', 'FullCode']],
+                                     use_container_width=True)
+
                 else:
-                    st.error("Lỗi kết nối Database!")
-            else:
-                st.info("👈 Vui lòng nhập hoặc quét mã Batch để bắt đầu truy xuất.")
-
-        # Phần Visual (Biểu đồ luồng đi)
-        if batch_query and 'trace_data' in locals() and not trace_data.empty:
-            st.divider()
-            st.subheader("📈 Biểu Đồ Biến Động Số Dư (Inventory Movement)")
-
-            # 1. Sắp xếp dữ liệu theo thời gian tăng dần
-            chart_data = trace_data.sort_values("Timestamp").copy()
-
-            # 2. Tính tồn kho lũy kế (Cộng dồn)
-            # Dòng này cực quan trọng: Nó cộng dồn cột Real_Qty từ trên xuống dưới
-            chart_data['Running_Balance'] = chart_data['Real_Qty'].cumsum()
-
-            # 3. Vẽ biểu đồ đường (Line Chart)
-            line = alt.Chart(chart_data).mark_line(point=True, strokeWidth=3).encode(
-                x=alt.X('Timestamp:T', title='Thời gian', axis=alt.Axis(format='%H:%M %d/%m')),
-                y=alt.Y('Running_Balance:Q', title='Số lượng tồn kho'),
-                tooltip=['Timestamp', 'Action', 'Qty', 'Running_Balance']
-            ).properties(
-                title=f"Lịch sử tồn kho của Batch: {batch_query}",
-                height=300
-            ).interactive()
-
-            # 4. Tô màu vùng dưới biểu đồ cho đẹp (Area Chart)
-            area = alt.Chart(chart_data).mark_area(opacity=0.3, color='lightblue').encode(
-                x='Timestamp:T',
-                y='Running_Balance:Q'
-            )
-
-            st.altair_chart(area + line, use_container_width=True)
+                    st.warning(f"⚠️ Không tìm thấy dữ liệu nào chứa mã: '{batch_query}'")
 elif st.session_state["authentication_status"] is False:
     st.error('Sai mật khẩu!')
 elif st.session_state["authentication_status"] is None:
