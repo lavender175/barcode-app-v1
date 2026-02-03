@@ -447,10 +447,39 @@ if st.session_state["authentication_status"] is True:
                 t1, t2 = st.tabs(["📝 Nhật Ký Kho (Gần nhất)", "🏭 Tiến Độ Sản Xuất"])
 
                 with t1:
-                    # Chỉ hiện 10 dòng mới nhất, bỏ bớt cột rườm rà
-                    display_cols = ['Timestamp', 'User', 'FullCode', 'Action', 'Qty', 'Location']
+                    st.markdown("#### 📝 Nhật Ký Hoạt Động Chi Tiết")
+
+                    # Tạo bản sao để xử lý hiển thị (không ảnh hưởng logic tính toán)
+                    df_display = df_inv.copy()
+
+                    # 1. Tách FullCode thành SKU và Batch riêng biệt cho dễ nhìn
+                    # Logic: Nếu có dấu "|", tách ra. Nếu không, để Batch là trống
+                    df_display['SKU_View'] = df_display['FullCode'].apply(
+                        lambda x: str(x).split('|')[0] if '|' in str(x) else str(x))
+                    df_display['Batch_View'] = df_display['FullCode'].apply(
+                        lambda x: str(x).split('|')[1] if '|' in str(x) else '---')
+
+                    # 2. Làm đẹp định dạng thời gian (Bỏ phần giây thừa thãi nếu muốn)
+                    # df_display['Time_View'] = pd.to_datetime(df_display['Timestamp']).dt.strftime('%H:%M %d/%m/%Y')
+
+                    # 3. Sắp xếp lại thứ tự cột cho thuận mắt Manager
+                    cols_order = ['Timestamp', 'SKU_View', 'Batch_View', 'Qty', 'Location', 'Action', 'User']
+
+                    # Lấy 15 dòng mới nhất
+                    final_table = df_display.sort_values(by='Timestamp', ascending=False).head(15)[cols_order]
+
+                    # 4. Hiển thị bảng với tên cột Tiếng Việt đẹp đẽ
                     st.dataframe(
-                        df_inv.sort_values(by='Timestamp', ascending=False).head(10)[display_cols],
+                        final_table,
+                        column_config={
+                            "Timestamp": st.column_config.DatetimeColumn("Thời Gian", format="D/M/YYYY h:mm a"),
+                            "SKU_View": "Sản Phẩm (SKU)",
+                            "Batch_View": st.column_config.TextColumn("Số Lô (Batch)", help="Mã định danh lô hàng"),
+                            "Qty": st.column_config.NumberColumn("Số Lượng", format="%d"),
+                            "Location": "Vị Trí",
+                            "Action": st.column_config.TextColumn("Hành Động", width="small"),
+                            "User": "Người Nhập"
+                        },
                         use_container_width=True,
                         hide_index=True
                     )
