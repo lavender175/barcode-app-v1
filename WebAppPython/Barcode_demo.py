@@ -198,7 +198,7 @@ if st.session_state["authentication_status"] is True:
     # --- GIAO DIỆN CHÍNH ---
     st.title("HỆ THỐNG QUẢN LÝ KHO & SẢN XUẤT")
     # ✅ CHỈ GIỮ LẠI TIÊU ĐỀ:
-    st.title(f"{current_tab}")
+    # st.title(f"{current_tab}")
     st.divider()
 
     # ================= MODULE 1: NHẬP KHO =================
