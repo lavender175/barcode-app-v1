@@ -135,15 +135,14 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_role = st.session_state["username"]
 
+    # === CẤU HÌNH MENU BÊN TRÁI (SIDEBAR) ===
     with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/2554/2554045.png", width=60)
+        st.image("https://cdn-icons-png.flaticon.com/512/2554/2554045.png", width=80)
         st.title("WMS PRO")
-        st.caption(f"User: {user_name} ({user_role})")
+        st.caption(f"Hello, {user_name} 👋")
 
-        st.divider()
-
-        # --- MENU CHÍNH (NẰM Ở ĐÂY SẼ GỌN TRÊN MOBILE) ---
-        # Dùng icon để nhìn chuyên nghiệp hơn
+        # --- MENU CHÍNH (NGUỒN DUY NHẤT) ---
+        # Chỉ khai báo current_tab MỘT LẦN ở đây
         current_tab = st.radio(
             "Chọn Nghiệp Vụ:",
             ["📊 Dashboard", "📥 Nhập Kho (Inbound)", "📤 Xuất Kho (Outbound)", "🔍 Truy Xuất (Traceability)"],
@@ -152,11 +151,11 @@ if st.session_state["authentication_status"] is True:
 
         st.divider()
         authenticator.logout('Đăng xuất', 'sidebar')
-        st.caption("Ver 4.2 - Vinamilk Standard")
 
-    # --- PHẦN HEADER CHÍNH CỦA TRANG (Luôn hiển thị tiêu đề) ---
-    # Lấy tên tab hiện tại để làm tiêu đề
-    st.header(f"{current_tab}")
+    # === PHẦN HEADER CỦA TRANG CHÍNH ===
+    # Ở ngoài này KHÔNG ĐƯỢC CÓ st.radio nữa
+    # Chỉ hiển thị tiêu đề dựa trên cái ông đã chọn trong Sidebar
+    st.title(f"{current_tab}")
     st.divider()
     # --- HÀM XỬ LÝ ẢNH & BARCODE ---
     def create_barcode(code):
