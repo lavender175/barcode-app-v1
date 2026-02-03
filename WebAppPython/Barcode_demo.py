@@ -155,8 +155,9 @@ if st.session_state["authentication_status"] is True:
     # === PHẦN HEADER CỦA TRANG CHÍNH ===
     # Ở ngoài này KHÔNG ĐƯỢC CÓ st.radio nữa
     # Chỉ hiển thị tiêu đề dựa trên cái ông đã chọn trong Sidebar
-    st.title(f"{current_tab}")
     st.divider()
+    st.title(f"{current_tab}")
+
     # --- HÀM XỬ LÝ ẢNH & BARCODE ---
     def create_barcode(code):
         try:
