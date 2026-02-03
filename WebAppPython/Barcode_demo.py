@@ -19,86 +19,13 @@ import tempfile
 # --- 1. CẤU HÌNH HỆ THỐNG ---
 st.set_page_config(page_title="WMS Demo - Vinamilk", layout="wide", page_icon="🥛")
 
-# --- CSS TÙY CHỈNH (STICKY MENU + 1 ROW METRICS) ---
+# --- CSS TỐI ƯU ---
 st.markdown("""
 <style>
-    /* 1. Ẩn Sidebar & Header mặc định */
-    [data-testid="stSidebar"] {display: none;}
-    [data-testid="collapsedControl"] {display: none;}
-    header[data-testid="stHeader"] {display: none;} /* Ẩn luôn header 3 chấm của Streamlit cho rộng */
-
-    /* 2. MENU DÍNH (STICKY NAVBAR) */
-    div[role="radiogroup"] {
-        position: fixed; /* Chốt cứng vị trí */
-        top: 0;
-        left: 0;
-        width: 100%;
-        z-index: 99999; /* Luôn nổi lên trên cùng */
-        background-color: var(--secondary-background-color); /* Màu nền đè lên nội dung khi cuộn */
-        padding: 10px 0;
-        display: flex;
-        justify-content: center;
-        gap: 10px;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); /* Tạo bóng đổ cho đẹp */
-        overflow-x: auto; /* Cho phép lướt ngang nếu màn hình quá bé */
-    }
-
-    /* Style cho nút bấm trong menu */
-    div[role="radiogroup"] > label {
-        background-color: var(--background-color) !important;
-        color: var(--text-color) !important;
-        padding: 5px 15px;
-        border-radius: 15px;
-        border: 1px solid #ccc;
-        white-space: nowrap; /* Không xuống dòng chữ trong nút */
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    /* Hiệu ứng nút ĐANG CHỌN */
-    div[role="radiogroup"] label[data-checked="true"] {
-        background-color: #154360 !important;
-        border-color: #154360 !important;
-    }
-    div[role="radiogroup"] label[data-checked="true"] p {
-        color: white !important;
-        font-weight: bold;
-    }
-
-    /* 3. ÉP DASHBOARD METRICS HIỂN THỊ 1 HÀNG TRÊN MOBILE */
-    /* Mẹo: Streamlit dùng Flexbox, ta ép nó không được wrap (xuống dòng) */
-
-    /* Chỉ áp dụng cho các cột metric (thường nằm ở Block ngang đầu tiên) */
-    [data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important; /* Cấm xuống dòng */
-        overflow-x: auto; /* Nếu chật quá thì cho cuộn ngang */
-        gap: 0.5rem !important;
-    }
-
-    /* Thu nhỏ chữ trong Metric để vừa màn hình điện thoại */
-    [data-testid="stMetricValue"] {
-        font-size: 1.2rem !important; /* Số to vừa phải */
-    }
-    [data-testid="stMetricLabel"] {
-        font-size: 0.7rem !important; /* Nhãn nhỏ lại */
-        white-space: nowrap; /* Không xuống dòng nhãn */
-    }
-
-    /* 4. ĐẨY NỘI DUNG XUỐNG ĐỂ KHÔNG BỊ MENU CHE MẤT */
-    .block-container {
-        padding-top: 5rem !important; /* Chừa chỗ cho cái Menu dính */
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
-    }
-
-    /* Tinh chỉnh Header tiêu đề */
-    .main-header {
-        font-size: 20px !important; 
-        font-weight: 700; 
-        color: var(--text-color);
-        text-align: center;
-        margin-bottom: 10px;
-    }
+    [data-testid="stHorizontalBlock"] {flex-wrap: nowrap !important; overflow-x: auto !important; padding-bottom: 5px;}
+    .stAppDeployButton {display: none;}
+    .main-header {font-size: 24px !important; font-weight: 700; color: #154360; margin-bottom: 10px;}
+    .block-container {padding-top: 2rem;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -220,31 +147,26 @@ authenticator.login()
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
 
-    # === HEADER NAVIGATOR (STICKY) ===
-    # Tách logo và logout ra khỏi Menu để Menu dính một mình (Gọn hơn trên mobile)
-    # Menu sẽ nằm ở top, fixed. Logo và Logout sẽ nằm ở dưới content header.
-
-    current_tab = st.radio("M", ["Dashboard", "Nhập Kho", "Xuất Kho", "Truy Xuất"], horizontal=True,
-                           label_visibility="collapsed")
-
-    # Nút Logout nhỏ gọn góc phải trên cùng (hack css absolute)
-    with st.sidebar:  # Hack để dùng hàm logout của thư viện nhưng ẩn sidebar đi
-        authenticator.logout('Exit', 'sidebar')
+    # === SIDEBAR ===
+    with st.sidebar:
+        st.image("https://cdn-icons-png.flaticon.com/512/2554/2554045.png", width=80)
+        st.markdown(f"👤 **{user_name}**")
+        current_tab = st.radio("CHỨC NĂNG:", ["Dashboard", "Nhập Kho", "Xuất Kho", "Truy Xuất"], index=0)
+        st.divider()
+        authenticator.logout('Đăng xuất', 'sidebar')
 
     # ================= MODULE 1: NHẬP KHO =================
     if current_tab == "Nhập Kho":
         st.markdown(f'<p class="main-header">📥 NHẬP KHO</p>', unsafe_allow_html=True)
         c1, c2 = st.columns([1, 1.5], gap="large")
-
         with c1:
-            st.caption("📝 Thông tin lô hàng")
+            st.caption("📝 Thông tin")
             sku = st.selectbox("SKU:", ["VNM-SUATUOI-RAW", "VNM-DUONG-TINH-LUYEN", "VNM-MEN-PROBI", "VNM-NHADAM-CUBES"])
             qty = st.number_input("Qty:", min_value=1, value=100, step=10)
             batch = st.text_input("Batch:", f"LOT-{random.randint(1000, 9999)}")
             nsx = st.date_input("NSX:", date.today())
             hsd = st.date_input("HSD:", date.today() + timedelta(days=180))
             loc = st.selectbox("Vị trí:", ["Kho A (Lạnh)", "Kho B (Thường)", "Kho C (Hóa Chất)"])
-
             if st.button("💾 LƯU KHO", type="primary", use_container_width=True):
                 if check_duplicate_batch(sku, batch):
                     st.error("Lỗi: Batch đã tồn tại!")
@@ -257,7 +179,6 @@ if st.session_state["authentication_status"] is True:
                              str(hsd), loc, qty])
                         st.session_state['last_import'] = {'code': full, 'qty': qty, 'batch': batch, 'sku': sku}
                         st.toast("Đã nhập kho!", icon="✅")
-
         with c2:
             st.caption("🖨️ Kết quả & In Tem")
             if 'last_import' in st.session_state:
@@ -266,162 +187,166 @@ if st.session_state["authentication_status"] is True:
                 m1, m2 = st.columns(2)
                 m1.metric("SKU", info['sku']);
                 m2.metric("Qty", info['qty'])
-
                 img = create_barcode(info['code'])
                 if img:
-                    ic1, ic2 = st.columns([2, 1], vertical_alignment="center")
-                    with ic1:
-                        st.image(img, use_column_width=True)
-                    with ic2:
-                        if st.button("📦 Tem Lẻ", use_container_width=True):
-                            try:
-                                pdf = FPDF(orientation='L', unit='mm', format=(100, 150));
-                                pdf.add_page();
-                                pdf.set_font("Helvetica", 'B', 16)
-                                pdf.cell(0, 10, "TEM LUU KHO", ln=True, align='C')
-                                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                                    img.seek(0);
-                                    tmp.write(img.getvalue());
-                                    pdf.image(tmp.name, 10, 20, 130)
-                                pdf.set_xy(10, 80);
-                                pdf.set_font("Helvetica", size=12);
-                                pdf.multi_cell(0, 8, f"SKU: {info['sku']}\nBatch: {info['batch']}")
-                                st.download_button("⬇ PDF", bytes(pdf.output()), f"P_{info['batch']}.pdf")
-                            except:
-                                st.error("Lỗi tạo PDF")
-                        st.write("")
-                        if st.button("🏷️ Tem Loạt", use_container_width=True):
-                            try:
-                                pdf = FPDF('P', 'mm', 'A4');
-                                pdf.set_auto_page_break(False);
-                                pdf.add_page()
-                                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                                    img.seek(0);
-                                    tmp.write(img.getvalue());
-                                    tp = tmp.name
-                                x, y, cx, cy = 12, 12, 0, 0
-                                for _ in range(info['qty']):
-                                    pdf.image(tp, x + 2, y + 5, 58);
-                                    pdf.set_xy(x, y + 32);
-                                    pdf.set_font("Helvetica", size=8)
-                                    pdf.cell(62, 5, f"{info['sku']}|{info['batch']}", align='C')
-                                    cx += 1;
-                                    x += 62
-                                    if cx > 2: cx = 0; x = 12; cy += 1; y += 40
-                                    if cy > 6: pdf.add_page(); cy = 0; y = 12
-                                st.download_button("⬇ A4", bytes(pdf.output()), f"B_{info['batch']}.pdf")
-                            except:
-                                st.error("Lỗi tạo PDF")
+                    st.image(img, width=250)
+                    if st.button("📦 Tem Lẻ"):
+                        st.info("Đã tạo lệnh in tem lẻ")  # Demo rút gọn
+                    if st.button("🏷️ Tem Loạt"):
+                        st.info("Đã tạo lệnh in tem loạt")
             else:
-                st.info("👈 Vui lòng nhập thông tin.")
-                c_wait1, c_wait2, c_wait3 = st.columns([1, 2, 1])
-                with c_wait2:
-                    st.image("https://cdn-icons-png.flaticon.com/512/1466/1466668.png", caption="Waiting...", width=100)
+                st.info("Chờ nhập liệu...")
 
-    # ================= MODULE 2: XUẤT KHO =================
+    # ================= MODULE 2: XUẤT KHO (FINAL FIX) =================
     elif current_tab == "Xuất Kho":
-        st.markdown(f'<p class="main-header">📤 XUẤT KHO</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="main-header">📤 XUẤT KHO (OUTBOUND)</p>', unsafe_allow_html=True)
         mode = st.radio("Chế độ:", ["🚀 Xuất Lẻ", "🏭 Xuất PO"], horizontal=True)
+        use_pda = st.checkbox("⚡ Chế độ PDA (Auto-Submit)", value=False)
         st.divider()
 
         if mode == "🏭 Xuất PO":
             c1, c2 = st.columns([1, 2])
             with c1:
                 po = st.selectbox("Chọn PO:", list(MOCK_DB_PO.keys()))
-                st.write("**Công thức (BOM):**")
+                st.write("**BOM:**")
                 st.dataframe(pd.DataFrame(list(MOCK_DB_PO[po]['BOM'].items()), columns=['SKU', 'Định Mức']),
                              hide_index=True)
             with c2:
-                with st.form("po"):
-                    raw = st.text_input("Scan Barcode:")
-                    st.form_submit_button("Check")
-
-                if raw:
-                    sku = raw.split("|")[0] if "|" in raw else raw
-                    if sku in MOCK_DB_PO[po]['BOM']:
-                        st.success(f"✅ ĐÚNG: {sku}")
-                        final_code = None;
-                        max_qty = 0
-
-                        if "|" in raw:
-                            batch_in_code = raw.split("|")[1]
-                            stock_data = get_batch_stock_info(sku)
-                            found_batch = next((item for item in stock_data if item['batch'] == batch_in_code), None)
-                            if found_batch:
-                                final_code = raw;
-                                max_qty = found_batch['qty']
-                                st.caption(f"Lô: {batch_in_code} - Tồn: {max_qty}")
+                # --- PDA AUTO SUBMIT (LOGIC NHANH) ---
+                if use_pda:
+                    with st.form("pda_po", clear_on_submit=True):
+                        raw = st.text_input("🔫 PDA Scan:", key="pda_scan")
+                        submitted = st.form_submit_button("Xử lý")
+                        if submitted and raw:
+                            sku = raw.split("|")[0] if "|" in raw else raw
+                            if sku in MOCK_DB_PO[po]['BOM']:
+                                if "|" in raw:
+                                    b_chk = raw.split("|")[1]
+                                    stk = get_batch_stock_info(sku)
+                                    f_b = next((i for i in stk if i['batch'] == b_chk), None)
+                                    if f_b and f_b['qty'] >= 100:  # PDA xuất nhanh 100
+                                        ws = connect_db("Inventory")
+                                        if ws:
+                                            ws.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_name, raw,
+                                                           "EXPORT_PO", "", "", f"To: {po}", -100])
+                                            st.toast(f"✅ Đã xuất: {raw}", icon="beep")
+                                    else:
+                                        st.error(f"❌ Lô {b_chk} không đủ hàng! Tồn: {f_b['qty'] if f_b else 0}")
+                                else:
+                                    st.error("⚠️ Cần quét FullCode")
                             else:
-                                st.error(f"❌ Lô {batch_in_code} hết hàng!")
-                        else:
-                            st.warning("⚠️ Chọn lô (FEFO):")
-                            stock_data = get_batch_stock_info(sku)
-                            if stock_data:
-                                opts = [f"{i['batch']} (Tồn: {i['qty']} - HSD: {i['hsd']})" for i in stock_data]
-                                sel = st.selectbox("Chọn lô:", opts)
-                                final_code = f"{sku}|{sel.split(' (')[0]}"
-                                max_qty = int(sel.split("Tồn: ")[1].split(" -")[0])
-                            else:
-                                st.error("❌ Hết hàng!")
+                                st.error("⛔ Sai vật tư!")
 
-                        if final_code and max_qty > 0:
-                            st.divider()
-                            c_q, c_b = st.columns([1, 1])
-                            with c_q:
-                                q_out = st.number_input("Thực xuất (Kg):", min_value=1, max_value=int(max_qty), value=1)
-                            with c_b:
-                                st.write("");
-                                st.write("")
-                                if st.button("🚀 XUẤT NGAY"):
-                                    connect_db("Inventory").append_row(
-                                        [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_name, final_code,
-                                         "EXPORT_PO", "", "", f"To: {po}", -q_out])
-                                    st.toast("Thành công!", icon="✅");
-                                    st.success(f"Đã xuất: {final_code}")
-                    else:
-                        st.error("⛔ Sai vật tư!")
-        else:
-            scan_type = st.radio("Input:", ["Súng", "Cam"], horizontal=True)
-            raw = st.text_input("Mã:") if scan_type == "Súng" else (
-                lambda x: decode_img(x.getvalue())[1][0] if x else None)(st.camera_input("Cam"))
-
-            if raw:
-                st.markdown(f"### 🔎 `{raw}`")
-                final_code = None;
-                max_qty = 0
-                sku_check = raw.split("|")[0] if "|" in raw else raw
-                stock_data = get_batch_stock_info(sku_check)
-
-                if "|" in raw:
-                    b_check = raw.split("|")[1]
-                    f_b = next((i for i in stock_data if i['batch'] == b_check), None)
-                    if f_b:
-                        final_code = raw; max_qty = f_b['qty']
-                    else:
-                        st.error("Lô này hết hàng!")
+                # --- MANUAL SELECT (LOGIC CHẶT CHẼ) ---
                 else:
-                    if stock_data:
-                        opts = [f"{i['batch']} (Tồn: {i['qty']} - HSD: {i['hsd']})" for i in stock_data]
-                        sel = st.selectbox("Chọn lô:", opts)
+                    with st.form("po"):
+                        raw = st.text_input("Scan Barcode:")
+                        st.form_submit_button("Check")
+
+                    if raw:
+                        sku = raw.split("|")[0] if "|" in raw else raw
+                        if sku in MOCK_DB_PO[po]['BOM']:
+                            st.success(f"✅ ĐÚNG: {sku}")
+                            final_code = None;
+                            max_qty = 0
+
+                            if "|" in raw:
+                                batch_in_code = raw.split("|")[1]
+                                stock_data = get_batch_stock_info(sku)
+                                found_batch = next((item for item in stock_data if item['batch'] == batch_in_code),
+                                                   None)
+                                if found_batch:
+                                    final_code = raw;
+                                    max_qty = found_batch['qty']
+                                    st.caption(f"Lô: {batch_in_code} - Tồn: {max_qty}")
+                                else:
+                                    st.error(f"❌ Lô {batch_in_code} hết hàng!")
+                            else:
+                                st.warning("⚠️ Chọn lô (FEFO):")
+                                stock_data = get_batch_stock_info(sku)
+                                if stock_data:
+                                    opts = [f"{i['batch']} (Tồn: {i['qty']} - HSD: {i['hsd']})" for i in stock_data]
+                                    sel = st.selectbox("Chọn lô:", opts)
+                                    final_code = f"{sku}|{sel.split(' (')[0]}"
+                                    max_qty = int(sel.split("Tồn: ")[1].split(" -")[0])
+                                else:
+                                    st.error("❌ Hết hàng!")
+
+                            if final_code and max_qty > 0:
+                                st.divider()
+                                c_q, c_b = st.columns([1, 1])
+                                with c_q:
+                                    # [FIX 1] UI CONSTRAINT: Giới hạn max_value bằng đúng tồn kho
+                                    q_out = st.number_input("Thực xuất (Kg):", min_value=1, max_value=int(max_qty),
+                                                            value=1)
+                                    st.caption(f"Tối đa: {max_qty}")
+                                with c_b:
+                                    st.write("");
+                                    st.write("")
+                                    if st.button("🚀 XUẤT NGAY"):
+                                        # [FIX 2] BACKEND GUARD: Chặn lần cuối trước khi ghi DB
+                                        if q_out > max_qty:
+                                            st.toast("❌ LỖI: Vượt quá tồn kho!", icon="⛔")
+                                            st.error(f"⛔ Không thể xuất {q_out} vì tồn kho chỉ còn {max_qty}!")
+                                            st.stop()  # Dừng hình tại đây!
+
+                                        connect_db("Inventory").append_row(
+                                            [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_name, final_code,
+                                             "EXPORT_PO", "", "", f"To: {po}", -q_out])
+                                        st.toast("Thành công!", icon="✅");
+                                        st.success(f"Đã xuất: {final_code}")
+                        else:
+                            st.error("⛔ Sai vật tư!")
+
+        else:  # XUẤT LẺ
+            scan_type = st.radio("Input:", ["Súng/PDA", "Camera ĐT"], horizontal=True)
+            if scan_type == "Súng/PDA":
+                with st.form("retail_pda", clear_on_submit=True):
+                    raw = st.text_input("Mã:", key="ret_scan")
+                    if st.form_submit_button("Xuất 1 Unit") and raw:
+                        if "|" in raw:
+                            connect_db("Inventory").append_row(
+                                [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_name, raw, "EXPORT", "", "",
+                                 "Retail", -1])
+                            st.toast(f"Đã xuất 1: {raw}", icon="✅")
+                        else:
+                            st.error("Cần quét FullCode")
+            else:
+                raw = (lambda x: decode_img(x.getvalue())[1][0] if x else None)(st.camera_input("Cam"))
+                if raw:
+                    st.markdown(f"### 🔎 `{raw}`")
+                    final_code = None;
+                    max_qty = 0
+                    sku_check = raw.split("|")[0] if "|" in raw else raw
+                    stk = get_batch_stock_info(sku_check)
+                    if "|" in raw:
+                        b_chk = raw.split("|")[1]
+                        f_b = next((i for i in stk if i['batch'] == b_chk), None)
+                        if f_b:
+                            final_code = raw; max_qty = f_b['qty']
+                        else:
+                            st.error("Lô này hết hàng!")
+                    elif stk:
+                        sel = st.selectbox("Chọn lô:", [f"{i['batch']} (Tồn: {i['qty']})" for i in stk])
                         final_code = f"{sku_check}|{sel.split(' (')[0]}"
-                        max_qty = int(sel.split("Tồn: ")[1].split(" -")[0])
+                        max_qty = int(sel.split("Tồn: ")[1].split(")")[0])
                     else:
                         st.error("Hết hàng!")
 
-                if final_code and max_qty > 0:
-                    q = st.number_input("SL Xuất:", 1, max_value=int(max_qty), value=1)
-                    if st.button("🚀 XUẤT"):
-                        connect_db("Inventory").append_row(
-                            [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_name, final_code, "EXPORT", "", "",
-                             "Retail", -q])
-                        st.toast("Đã xuất!", icon="🚛")
+                    if final_code and max_qty > 0:
+                        q = st.number_input("SL Xuất:", 1, max_value=int(max_qty), value=1)
+                        if st.button("🚀 XUẤT"):
+                            if q > max_qty: st.error("Lỗi vượt quá tồn kho!"); st.stop()
+                            connect_db("Inventory").append_row(
+                                [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_name, final_code, "EXPORT", "", "",
+                                 "Retail", -q])
+                            st.toast("Đã xuất!", icon="🚛")
 
     # ================= MODULE 3: DASHBOARD =================
     elif current_tab == "Dashboard":
         st.markdown(f'<p class="main-header">📊 DASHBOARD</p>', unsafe_allow_html=True)
         ws_inv = connect_db("Inventory");
         ws_po = connect_db("Production")
-
         if ws_inv:
             df = pd.DataFrame(ws_inv.get_all_records())
             if not df.empty:
@@ -429,24 +354,19 @@ if st.session_state["authentication_status"] is True:
                 df['Qty'] = pd.to_numeric(df['Qty'], errors='coerce').fillna(0)
                 df['Real'] = df.apply(lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']) else x['Qty'], axis=1)
                 df['SKU'] = df['FullCode'].apply(lambda x: x.split('|')[0] if '|' in x else x)
-
                 total = df.groupby('SKU')['Real'].sum();
                 total = total[total > 0]
 
-                # --- ÉP 3 CỘT NÀY THÀNH 1 HÀNG TRÊN MOBILE ---
                 c1, c2, c3 = st.columns(3)
                 c1.metric("📦 Tổng Tồn", f"{int(total.sum()):,}")
                 c2.metric("🔖 Loại SKU", len(total))
                 c3.metric("🏭 Pending", 2)
-
                 st.divider()
-
                 t1, t2 = st.tabs(["📝 Nhật Ký Kho", "🏭 Tiến Độ SX"])
                 with t1:
                     st.dataframe(df.sort_values('Timestamp', ascending=False).head(10)[
                                      ['Timestamp', 'FullCode', 'Action', 'Qty', 'User']], use_container_width=True,
                                  hide_index=True)
-
                 with t2:
                     if ws_po:
                         df_p = pd.DataFrame(ws_po.get_all_records())
@@ -457,14 +377,12 @@ if st.session_state["authentication_status"] is True:
                                 return 'background-color: #d4edda; color: black;'
                             elif val == 'Pending':
                                 return 'background-color: #fff3cd; color: black;'
-                            elif val == 'Running':
-                                return 'background-color: #cce5ff; color: black;'
                             return ''
 
 
                         st.dataframe(df_p.style.applymap(color_status, subset=['Status']), use_container_width=True)
                     else:
-                        st.info("Chưa có dữ liệu PO.")
+                        st.info("No PO Data.")
 
     # ================= MODULE 4: TRUY XUẤT =================
     elif current_tab == "Truy Xuất":
@@ -476,21 +394,16 @@ if st.session_state["authentication_status"] is True:
                 df = pd.DataFrame(ws.get_all_records())
                 df['FullCode'] = df['FullCode'].astype(str)
                 sub = df[df['FullCode'].str.contains(q, case=False, na=False)].copy()
-
                 if not sub.empty:
                     sub['Qty'] = pd.to_numeric(sub['Qty'], errors='coerce')
                     sub['Real'] = sub.apply(lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']) else x['Qty'], axis=1)
                     sub['Time'] = pd.to_datetime(sub['Timestamp'])
-
-                    st.success(f"Tìm thấy: {len(sub)} giao dịch")
                     bal = sub['Real'].sum()
                     st.metric("Tồn hiện tại", bal)
-
-                    chart = sub.sort_values("Time").copy()
+                    chart = sub.sort_values("Time").copy();
                     chart['Run'] = chart['Real'].cumsum()
                     st.altair_chart(alt.Chart(chart).mark_line(point=True).encode(x='Time:T', y='Run:Q').interactive(),
                                     use_container_width=True)
-
                     with st.expander("Chi tiết"):
                         st.dataframe(sub[['Timestamp', 'Action', 'Qty', 'User', 'Location']], use_container_width=True)
                 else:
