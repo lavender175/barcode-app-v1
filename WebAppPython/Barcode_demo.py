@@ -136,13 +136,28 @@ if st.session_state["authentication_status"] is True:
     user_role = st.session_state["username"]
 
     with st.sidebar:
-        st.title("🏭 WMS PRO")
-        st.write(f"User: **{user_name}**")
-        authenticator.logout('Đăng xuất', 'sidebar')
+        st.image("https://cdn-icons-png.flaticon.com/512/2554/2554045.png", width=60)
+        st.title("WMS PRO")
+        st.caption(f"User: {user_name} ({user_role})")
+
         st.divider()
-        st.markdown("### 📌 Menu")
 
+        # --- MENU CHÍNH (NẰM Ở ĐÂY SẼ GỌN TRÊN MOBILE) ---
+        # Dùng icon để nhìn chuyên nghiệp hơn
+        current_tab = st.radio(
+            "Chọn Nghiệp Vụ:",
+            ["📊 Dashboard", "📥 Nhập Kho (Inbound)", "📤 Xuất Kho (Outbound)", "🔍 Truy Xuất (Traceability)"],
+            index=0
+        )
 
+        st.divider()
+        authenticator.logout('Đăng xuất', 'sidebar')
+        st.caption("Ver 4.2 - Vinamilk Standard")
+
+    # --- PHẦN HEADER CHÍNH CỦA TRANG (Luôn hiển thị tiêu đề) ---
+    # Lấy tên tab hiện tại để làm tiêu đề
+    st.header(f"{current_tab}")
+    st.divider()
     # --- HÀM XỬ LÝ ẢNH & BARCODE ---
     def create_barcode(code):
         try:
@@ -336,37 +351,103 @@ if st.session_state["authentication_status"] is True:
 
         # --- MODE A: XUẤT SẢN XUẤT (NEW FEATURE) ---
         if "Theo PO" in mode:
-            c_po, c_scan = st.columns([1, 2])
-            with c_po:
-                po_sel = st.selectbox("Chọn Lệnh SX:", list(MOCK_DB_PO.keys()))
+            col_po_info, col_po_scan = st.columns([1, 2])
+
+            with col_po_info:
+                st.markdown("##### 1. Chọn Lệnh Sản Xuất")
+                po_sel = st.selectbox("Danh sách PO:", list(MOCK_DB_PO.keys()), label_visibility="collapsed")
                 po_data = MOCK_DB_PO[po_sel]
-                st.info(f"SP: {po_data['Product']}")
-                st.write("**Công thức (BOM):**")
-                st.dataframe(pd.DataFrame(list(po_data['BOM'].items()), columns=['SKU', 'Cần (Kg)']), hide_index=True)
 
-            with c_scan:
-                st.write("👇 **QUÉT MÃ NGUYÊN LIỆU ĐỐI CHIẾU:**")
-                scan_in = st.text_input("Scanner Input:", key="po_scan", placeholder="Click vào đây và bắn súng...")
+                st.info(f"🏷️ Sản phẩm: **{po_data['Product']}**")
 
-                if scan_in:
-                    s_sku = scan_in.split("|")[0] if "|" in scan_in else scan_in
-                    s_batch = scan_in.split("|")[1] if "|" in scan_in else "N/A"
+                # Hiển thị bảng định mức (BOM)
+                st.write("**📋 Định mức vật tư (BOM):**")
+                bom_df = pd.DataFrame(list(po_data['BOM'].items()), columns=['Nguyên Liệu', 'Định Mức (Kg)'])
+                st.dataframe(bom_df, use_container_width=True, hide_index=True)
 
-                    # VALIDATION LOGIC
-                    if s_sku in po_data['BOM']:
-                        st.success(f"✅ ĐÚNG NGUYÊN LIỆU: {s_sku}")
-                        st.caption(f"Batch: {s_batch}")
+            with col_po_scan:
+                st.markdown(f"##### 2. Quét Nguyên Liệu cho: `{po_sel}`")
 
-                        confirm_qty = st.number_input(f"Số lượng xuất thực tế ({s_sku}):", value=po_data['BOM'][s_sku])
-                        if st.button("Xác nhận xuất PO"):
-                            ws = connect_db("Inventory")
-                            if ws:
-                                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                ws.append_row(
-                                    [now, user_name, scan_in, "EXPORT_PO", "", "", f"To: {po_sel}", -confirm_qty])
-                                st.toast("Đã xuất kho thành công!", icon="🏭")
+                # Ô quét mã (Có form để enter tiện hơn)
+                with st.form("po_scan_form"):
+                    raw_scan = st.text_input("Quét mã nguyên liệu tại đây:", placeholder="Quét mã SKU hoặc FullCode...")
+                    btn_check_po = st.form_submit_button("🔍 Kiểm tra & Đối chiếu")
+
+                if raw_scan:
+                    # 1. Xử lý tách mã (SKU và Batch)
+                    if "|" in raw_scan:
+                        scan_sku, scan_batch = raw_scan.split("|")
+                        scan_full_code = raw_scan
+                        is_batch_selected = True
                     else:
-                        st.error(f"⛔ SAI NGUYÊN LIỆU! '{s_sku}' KHÔNG CÓ TRONG LỆNH {po_sel}")
+                        scan_sku = raw_scan
+                        scan_batch = None
+                        scan_full_code = None
+                        is_batch_selected = False
+
+                    # 2. KIỂM TRA BOM (QUAN TRỌNG NHẤT)
+                    # Xem SKU vừa quét có nằm trong công thức của PO này không
+                    if scan_sku in po_data['BOM']:
+                        target_qty = po_data['BOM'][scan_sku]
+                        st.success(f"✅ ĐÚNG NGUYÊN LIỆU: **{scan_sku}**")
+
+                        # Hiển thị thanh tiến độ giả lập (Cho đẹp)
+                        st.progress(0, text=f"Cần cấp: {target_qty} Kg")
+
+                        # 3. KIỂM TRA BATCH (FEFO LOGIC)
+                        final_code_to_export = None
+
+                        if is_batch_selected:
+                            # Nếu quét mã full -> Dùng luôn
+                            final_code_to_export = scan_full_code
+                            st.caption(f"🎯 Đã xác định lô: {scan_batch}")
+                        else:
+                            # Nếu quét mã thiếu -> Bắt chọn lô (Giống bên xuất lẻ)
+                            st.warning(f"⚠️ Mã `{scan_sku}` chưa có thông tin Lô (Batch). Vui lòng chọn bên dưới:")
+                            suggested = get_available_batches(scan_sku)
+
+                            if suggested:
+                                sel_batch = st.selectbox("👉 Chọn lô xuất (Ưu tiên Date cũ):", suggested)
+                                real_batch = sel_batch.split(" (")[0]
+                                final_code_to_export = f"{scan_sku}|{real_batch}"
+                            else:
+                                st.error("❌ Hết hàng tồn kho cho mã này!")
+
+                        # 4. FORM XÁC NHẬN XUẤT
+                        if final_code_to_export:
+                            st.divider()
+                            c_qty, c_btn = st.columns([1, 1])
+                            with c_qty:
+                                qty_out_po = st.number_input("Khối lượng thực xuất (Kg):",
+                                                             min_value=1, value=int(target_qty))
+                            with c_btn:
+                                st.write("")  # Spacer
+                                st.write("")
+                                if st.button("🚀 Cấp Hàng Cho SX", type="primary"):
+                                    ws = connect_db("Inventory")
+                                    if ws:
+                                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        # Ghi log Action là EXPORT_PO để sau này lọc báo cáo
+                                        ws.append_row([
+                                            now,
+                                            user_name,
+                                            final_code_to_export,
+                                            "EXPORT_PO",
+                                            "",
+                                            "",
+                                            f"To: {po_sel}",  # Location đích là mã PO
+                                            -qty_out_po
+                                        ])
+                                        st.toast(f"Đã cấp {qty_out_po}kg cho {po_sel}", icon="🏭")
+                                        st.success(f"Đã ghi nhận giao dịch: {final_code_to_export}")
+
+                    else:
+                        # NẾU QUÉT SAI HÀNG (KHÔNG CÓ TRONG BOM)
+                        st.error(f"⛔ CẢNH BÁO SAI VẬT TƯ!")
+                        st.markdown(f"""
+                                Nguyên liệu **{scan_sku}** KHÔNG có trong công thức của **{po_sel}**.
+                                \n👉 Vui lòng kiểm tra lại phiếu Lệnh Sản Xuất.
+                                """)
 
         # --- MODE B: XUẤT LẺ (CẬP NHẬT LOGIC CHẶN LỖI) ---
         else:
