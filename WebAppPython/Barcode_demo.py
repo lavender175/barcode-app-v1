@@ -384,44 +384,63 @@ if st.session_state["authentication_status"] is True:
 
             # --- LOGIC XỬ LÝ MÃ ---
             if raw_code:
-                st.markdown(f"### 🔎 Mã vừa quét: `{raw_code}`")
+                st.divider()
+                c1, c2 = st.columns([2, 1])
+                with c1:
+                    st.markdown(f"### 🔎 Mã quét: `{raw_code}`")
+                with c2:
+                    # 1. THÊM Ô NHẬP SỐ LƯỢNG (Để không phải xuất từng cái)
+                    qty_out = st.number_input("Số lượng xuất:", min_value=1, value=1, step=1)
 
-                # TRƯỜNG HỢP 1: MÃ CHUẨN (Có dấu |) -> Cho xuất luôn
+                # Biến này sẽ hứng giá trị cuối cùng để ghi vào DB
+                final_full_code = None
+
+                # --- TRƯỜNG HỢP 1: MÃ CHUẨN (Đã có dấu |) ---
                 if "|" in raw_code:
                     sku, batch = raw_code.split("|")
-                    st.success(f"✅ Mã chuẩn. Batch: {batch}")
-                    if st.button("Xác nhận xuất ngay"):
-                        ws = connect_db("Inventory")
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        ws.append_row([now, user_name, raw_code, "EXPORT", "", "", "Retail/Scanner", -1])
-                        st.toast(f"Đã xuất {sku}", icon="🚛")
+                    st.success(f"✅ Mã hợp lệ! Sản phẩm: {sku} - Lô: {batch}")
+                    final_full_code = raw_code  # <--- ĐỊNH NGHĨA Ở ĐÂY
 
-                # TRƯỜNG HỢP 2: MÃ THIẾU (Chỉ có SKU hoặc EAN) -> BẮT CHỌN BATCH
+                # --- TRƯỜNG HỢP 2: MÃ THIẾU (Chỉ có SKU) ---
                 else:
-                    st.warning(f"⚠️ Cảnh báo: Mã `{raw_code}` thiếu thông tin Lô (Batch)!")
-                    st.write("👉 Hệ thống yêu cầu chỉ định lô hàng cụ thể để đảm bảo truy xuất (FEFO).")
+                    st.warning(f"⚠️ Mã `{raw_code}` thiếu thông tin Lô (Batch)!")
 
-                    # Gọi hàm tìm batch gợi ý
+                    # Gọi hàm tìm batch gợi ý (FEFO)
                     suggested_batches = get_available_batches(raw_code)
 
                     if suggested_batches:
-                        selected_batch_info = st.selectbox("Chọn Lô cần xuất (Ưu tiên HSD gần nhất):",
-                                                           suggested_batches)
+                        # Bắt buộc chọn lô
+                        selected_batch_info = st.selectbox("👉 Chọn Lô cần xuất (Ưu tiên Date cũ):", suggested_batches)
 
-                        # Tách lấy cái mã batch thật (bỏ phần HSD đi)
+                        # Tách lấy mã batch thật (Bỏ phần HSD trong ngoặc đơn đi)
                         real_batch = selected_batch_info.split(" (")[0]
-                        final_full_code = f"{raw_code}|{real_batch}"
 
-                        st.info(f"Mã đầy đủ sẽ ghi nhận: **{final_full_code}**")
-
-                        if st.button("✅ Xác nhận xuất với Lô này"):
-                            ws = connect_db("Inventory")
-                            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            ws.append_row(
-                                [now, user_name, final_full_code, "EXPORT", "", "", "Retail/Manual-Batch", -1])
-                            st.success("Đã xuất kho thành công! Dữ liệu đã được chuẩn hóa.")
+                        # Ghép lại thành mã chuẩn
+                        final_full_code = f"{raw_code}|{real_batch}"  # <--- ĐỊNH NGHĨA Ở ĐÂY
+                        st.info(f"Mã sẽ ghi nhận: **{final_full_code}**")
                     else:
                         st.error(f"❌ Không tìm thấy tồn kho nào cho mã '{raw_code}'!")
+
+                # --- NÚT XÁC NHẬN (Chỉ hiện khi đã có final_full_code) ---
+                if final_full_code:
+                    st.divider()
+                    if st.button("🚀 Xác nhận xuất kho", type="primary"):
+                        ws = connect_db("Inventory")
+                        if ws:
+                            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            # Ghi vào DB: dùng final_full_code và số lượng âm (-qty_out)
+                            ws.append_row([
+                                now,
+                                user_name,
+                                final_full_code,
+                                "EXPORT",
+                                "",
+                                "",
+                                "Xuất Bán Hàng",  # Đổi tên Label ở đây
+                                -qty_out  # Trừ số lượng
+                            ])
+                            st.toast(f"Đã xuất {qty_out} sản phẩm!", icon="🚛")
+                            st.success(f"Đã lưu giao dịch: {final_full_code} | SL: -{qty_out}")
 
     # ================= MODULE 3: DASHBOARD =================
     elif "Dashboard" in current_tab:
@@ -642,23 +661,32 @@ if st.session_state["authentication_status"] is True:
         # Phần Visual (Biểu đồ luồng đi)
         if batch_query and 'trace_data' in locals() and not trace_data.empty:
             st.divider()
-            st.subheader("🕸️ Sơ Đồ Phân Phối (Supply Chain Visualization)")
+            st.subheader("📈 Biểu Đồ Biến Động Số Dư (Inventory Movement)")
 
-            #
+            # 1. Sắp xếp dữ liệu theo thời gian tăng dần
+            chart_data = trace_data.sort_values("Timestamp").copy()
 
-            # Vẽ biểu đồ Gantt hoặc Timeline bằng Altair
-            chart = alt.Chart(trace_data).mark_circle(size=100).encode(
-                x=alt.X('Timestamp:T', title='Thời gian'),
-                y=alt.Y('Action:N', title='Hành động'),
-                color='Action',
-                tooltip=['FullCode', 'Qty', 'User', 'Location']
+            # 2. Tính tồn kho lũy kế (Cộng dồn)
+            # Dòng này cực quan trọng: Nó cộng dồn cột Real_Qty từ trên xuống dưới
+            chart_data['Running_Balance'] = chart_data['Real_Qty'].cumsum()
+
+            # 3. Vẽ biểu đồ đường (Line Chart)
+            line = alt.Chart(chart_data).mark_line(point=True, strokeWidth=3).encode(
+                x=alt.X('Timestamp:T', title='Thời gian', axis=alt.Axis(format='%H:%M %d/%m')),
+                y=alt.Y('Running_Balance:Q', title='Số lượng tồn kho'),
+                tooltip=['Timestamp', 'Action', 'Qty', 'Running_Balance']
             ).properties(
-                width='container',
-                height=300,
-                title="Dòng thời gian hoạt động của Batch"
+                title=f"Lịch sử tồn kho của Batch: {batch_query}",
+                height=300
             ).interactive()
 
-            st.altair_chart(chart, use_container_width=True)
+            # 4. Tô màu vùng dưới biểu đồ cho đẹp (Area Chart)
+            area = alt.Chart(chart_data).mark_area(opacity=0.3, color='lightblue').encode(
+                x='Timestamp:T',
+                y='Running_Balance:Q'
+            )
+
+            st.altair_chart(area + line, use_container_width=True)
 elif st.session_state["authentication_status"] is False:
     st.error('Sai mật khẩu!')
 elif st.session_state["authentication_status"] is None:
