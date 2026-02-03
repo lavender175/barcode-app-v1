@@ -178,47 +178,80 @@ if st.session_state["authentication_status"] is True:
                             st.error(f"Lỗi GSheets: {e}")
 
         with c2:
-            st.subheader("2. In Tem (Zebra Ready)")
+            st.subheader("2. Kết Quả & In Tem")
+
+            # Kiểm tra xem trong phiên làm việc có dữ liệu vừa nhập không
             if 'last_import' in st.session_state:
                 info = st.session_state['last_import']
-                img = create_barcode(info['code'])
-                if img: st.image(img, width=300)
 
+                # --- 1. HIỂN THỊ THÔNG TIN TO RÕ (MỚI) ---
+                # Dùng st.success để báo trạng thái và st.metric để hiện số to
+                st.success(f"✅ Đã lưu thành công lô: {info['batch']}")
+
+                m1, m2, m3 = st.columns([1.5, 1, 1])
+                m1.metric("Sản Phẩm (SKU)", info['sku'])
+                m2.metric("Số Batch", info['batch'], delta="Mới nhất")
+                m3.metric("Số Lượng", info['qty'])
+
+                st.divider()
+
+                # --- 2. HIỂN THỊ BARCODE ---
+                st.markdown("##### 🖨️ Xem trước Barcode:")
+                img = create_barcode(info['code'])
+                if img:
+                    # Caption hiển thị full code bên dưới ảnh
+                    st.image(img, caption=f"Mã quét: {info['code']}", width=350)
+
+                # --- 3. CÁC NÚT IN ẤN (LOGIC CŨ ĐÃ FIX LỖI) ---
                 b1, b2 = st.columns(2)
+
                 with b1:
-                    if st.button("📦 Tem Thùng (Lẻ)"):
+                    if st.button("📦 In Tem Thùng (Lẻ)"):
                         try:
                             pdf = FPDF(orientation='L', unit='mm', format=(100, 150))
-                            pdf.add_page();
+                            pdf.add_page()
                             pdf.set_font("Helvetica", 'B', 16)
                             pdf.cell(0, 10, txt=remove_accents("TEM NGUYEN LIEU"), ln=True, align='C')
+
+                            import tempfile
+
                             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                                img.seek(0);
+                                img.seek(0)
                                 tmp.write(img.getvalue())
                                 pdf.image(tmp.name, x=10, y=20, w=130)
+
+                            pdf.set_xy(10, 80)
+                            pdf.set_font("Helvetica", size=12)
+                            # Thêm thông tin text vào PDF cho dễ đọc
+                            content = f"SKU: {info['sku']}\nBatch: {info['batch']}\nQty: {info['qty']}"
+                            pdf.multi_cell(0, 8, txt=remove_accents(content))
+
                             pdf_data = bytes(pdf.output())
-                            st.download_button("⬇️ Tải PDF", pdf_data, f"Pallet_{info['batch']}.pdf")
+                            st.download_button("⬇️ Tải PDF Tem Thùng", pdf_data, f"Pallet_{info['batch']}.pdf")
                         except Exception as e:
                             st.error(str(e))
 
                 with b2:
-                    if st.button(f"🏷️ Tem Loạt ({info['qty']})"):
-                        try:  # --- KHỐI TRY/EXCEPT ĐÃ ĐƯỢC FIX ---
-                            with st.spinner("Đang render..."):
+                    if st.button(f"🏷️ In Tem Loạt ({info['qty']} cái)"):
+                        try:
+                            with st.spinner("Đang xử lý layout A4..."):
                                 pdf_bulk = FPDF(orientation='P', unit='mm', format='A4')
                                 pdf_bulk.set_auto_page_break(auto=False, margin=0)
                                 pdf_bulk.add_page()
+
                                 mx, my, cw, rh = 12, 12, 62, 40
                                 cols, rows = 3, 7
                                 x, y, cx, cy = mx, my, 0, 0
 
+                                import tempfile
+
                                 with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_b:
-                                    img.seek(0);
+                                    img.seek(0)
                                     tmp_b.write(img.getvalue())
                                     t_path = tmp_b.name
 
                                 for i in range(int(info['qty'])):
-                                    pdf_bulk.image(t_path, x=x + 2, y=y + 5, w=cw - 4)  # Không vẽ Rect
+                                    pdf_bulk.image(t_path, x=x + 2, y=y + 5, w=cw - 4)
                                     pdf_bulk.set_font("Helvetica", size=8)
                                     pdf_bulk.set_xy(x, y + rh - 8)
                                     pdf_bulk.cell(cw, 5, txt=remove_accents(f"{info['sku']} | {info['batch']}"),
@@ -234,12 +267,20 @@ if st.session_state["authentication_status"] is True:
                                         y += rh
                                         if cy >= rows: pdf_bulk.add_page(); cy = 0; y = my; x = mx
 
-                                bulk_bytes = bytes(pdf_bulk.output())
-                                st.download_button("⬇️ Tải A4 Bulk", bulk_bytes, f"Bulk_{info['batch']}.pdf")
+                                # Xử lý bytes an toàn
+                                try:
+                                    bulk_bytes = bytes(pdf_bulk.output())
+                                except:
+                                    bulk_bytes = pdf_bulk.output(dest='S').encode('latin-1')
+
+                                st.download_button("⬇️ Tải PDF A4", bulk_bytes, f"Bulk_{info['batch']}.pdf")
                         except Exception as e:
-                            st.error(f"Lỗi in loạt: {e}")
-                        finally:
-                            pass
+                            st.error(f"Lỗi: {e}")
+            else:
+                # Khi chưa nhập gì thì hiện thông báo chờ
+                st.info("👈 Vui lòng nhập thông tin lô hàng và bấm 'Lưu Kho' bên trái.")
+                st.image("https://cdn-icons-png.flaticon.com/512/1466/1466668.png", width=100,
+                         caption="Waiting for data...")
 
     # ================= MODULE 2: XUẤT KHO (NÂNG CẤP PO) =================
     elif "Xuất Kho" in current_tab:
