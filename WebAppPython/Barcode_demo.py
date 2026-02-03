@@ -17,7 +17,7 @@ import unicodedata
 import tempfile
 
 # --- 1. CẤU HÌNH HỆ THỐNG & HÀM BỔ TRỢ ---
-st.set_page_config(page_title="WMS Pro - Vinamilk Standard", layout="wide", page_icon="🏭")
+st.set_page_config(page_title="WMS Demo - Vinamilk Standard", layout="wide", page_icon="🏭")
 
 
 def remove_accents(input_str):
