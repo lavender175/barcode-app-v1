@@ -197,9 +197,8 @@ if st.session_state["authentication_status"] is True:
 
     # --- GIAO DIỆN CHÍNH ---
     st.title("HỆ THỐNG QUẢN LÝ KHO & SẢN XUẤT")
-    # Tìm dòng khai báo tabs và sửa lại:
-    tabs = ["📊 Dashboard","📥 Nhập Kho (Inbound)", "🏭 Xuất Kho (Outbound)", "🔍 Truy Xuất (Traceability)"]
-    current_tab = st.radio("Chọn nghiệp vụ:", tabs, horizontal=True, label_visibility="collapsed")
+    # ✅ CHỈ GIỮ LẠI TIÊU ĐỀ:
+    st.title(f"{current_tab}")
     st.divider()
 
     # ================= MODULE 1: NHẬP KHO =================
