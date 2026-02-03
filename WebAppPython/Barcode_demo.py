@@ -410,8 +410,14 @@ if st.session_state["authentication_status"] is True:
         if ws_inv:
             df = pd.DataFrame(ws_inv.get_all_records())
             if not df.empty:
+                # --- FIX LỖI TYPE ERROR TẠI ĐÂY ---
+                # Ép toàn bộ cột FullCode sang dạng chuỗi (string) để tránh lỗi với mã số
+                df['FullCode'] = df['FullCode'].astype(str)
+
                 df['Qty'] = pd.to_numeric(df['Qty'], errors='coerce').fillna(0)
                 df['Real'] = df.apply(lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']) else x['Qty'], axis=1)
+
+                # Logic tách chuỗi an toàn hơn
                 df['SKU'] = df['FullCode'].apply(lambda x: x.split('|')[0] if '|' in x else x)
 
                 total = df.groupby('SKU')['Real'].sum();
@@ -424,11 +430,11 @@ if st.session_state["authentication_status"] is True:
 
                 st.divider()
 
-                # --- KHÔI PHỤC TABS ---
+                # --- TABS ---
                 t1, t2 = st.tabs(["📝 Nhật Ký Kho", "🏭 Tiến Độ Sản Xuất"])
 
                 with t1:
-                    st.dataframe(df.sort_values('Timestamp', ascending=False).head(10)[
+                    st.dataframe(df.sort_values('Timestamp', ascending=False).head(15)[
                                      ['Timestamp', 'FullCode', 'Action', 'Qty', 'User']], use_container_width=True,
                                  hide_index=True)
 
