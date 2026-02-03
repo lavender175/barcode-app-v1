@@ -197,10 +197,24 @@ if st.session_state["authentication_status"] is True:
 
 
     # --- GIAO DIỆN CHÍNH ---
-    st.title("HỆ THỐNG QUẢN LÝ KHO & SẢN XUẤT")
-    # ✅ CHỈ GIỮ LẠI TIÊU ĐỀ:
-    # st.title(f"{current_tab}")
-    # st.divider()
+    st.markdown("""
+            <style>
+            .main-header {
+                font-size: 24px !important; 
+                font-weight: 700; 
+                color: #2E86C1; /* Màu xanh Vinamilk */
+                margin-bottom: 20px;
+            }
+            /* Ẩn bớt khoảng trắng thừa ở đầu trang Streamlit */
+            .block-container {
+                padding-top: 2rem; 
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+    # Hiển thị tiêu đề gọn gàng (Chỉ 1 dòng duy nhất)
+    # Ví dụ: "📦 Xuất Kho (Outbound)"
+    st.markdown(f'<p class="main-header">{current_tab}</p>', unsafe_allow_html=True)
 
     # ================= MODULE 1: NHẬP KHO =================
     if "Nhập Kho" in current_tab:
@@ -344,7 +358,7 @@ if st.session_state["authentication_status"] is True:
 
     # ================= MODULE 2: XUẤT KHO (NÂNG CẤP PO) =================
     elif "Xuất Kho" in current_tab:
-        st.subheader("📤 Xuất Kho (Smart Outbound)")
+        st.caption("Chế độ xuất kho thông minh hỗ trợ FEFO & Kiểm soát theo Lệnh sản xuất.")
         mode = st.radio("Chế độ:", ["🚀 Xuất Lẻ (Thông thường)", "🏭 Xuất Cho Sản Xuất (Theo PO)"], horizontal=True)
         st.divider()
 
