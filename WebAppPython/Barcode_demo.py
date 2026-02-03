@@ -19,62 +19,85 @@ import tempfile
 # --- 1. CẤU HÌNH HỆ THỐNG ---
 st.set_page_config(page_title="WMS Demo - Vinamilk", layout="wide", page_icon="🥛")
 
-# --- CSS TÙY CHỈNH (HỖ TRỢ LIGHT/DARK MODE TỰ ĐỘNG) ---
+# --- CSS TÙY CHỈNH (STICKY MENU + 1 ROW METRICS) ---
 st.markdown("""
 <style>
-    /* 1. Ẩn Sidebar và Header thừa */
+    /* 1. Ẩn Sidebar & Header mặc định */
     [data-testid="stSidebar"] {display: none;}
     [data-testid="collapsedControl"] {display: none;}
+    header[data-testid="stHeader"] {display: none;} /* Ẩn luôn header 3 chấm của Streamlit cho rộng */
 
-    /* 2. Menu Ngang (Navbar) sử dụng biến hệ thống */
-    div[data-testid="stRadio"] > label {display: none;}
+    /* 2. MENU DÍNH (STICKY NAVBAR) */
     div[role="radiogroup"] {
+        position: fixed; /* Chốt cứng vị trí */
+        top: 0;
+        left: 0;
+        width: 100%;
+        z-index: 99999; /* Luôn nổi lên trên cùng */
+        background-color: var(--secondary-background-color); /* Màu nền đè lên nội dung khi cuộn */
+        padding: 10px 0;
         display: flex;
-        flex-direction: row;
-        gap: 10px;
-        overflow-x: auto;
-        padding-bottom: 5px;
         justify-content: center;
+        gap: 10px;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); /* Tạo bóng đổ cho đẹp */
+        overflow-x: auto; /* Cho phép lướt ngang nếu màn hình quá bé */
     }
 
+    /* Style cho nút bấm trong menu */
     div[role="radiogroup"] > label {
-        /* Dùng biến này để tự đổi màu theo theme sáng/tối */
-        background-color: var(--secondary-background-color) !important;
+        background-color: var(--background-color) !important;
         color: var(--text-color) !important;
-        padding: 8px 20px;
-        border-radius: 20px;
-        border: 1px solid var(--secondary-background-color);
-        transition: all 0.3s;
+        padding: 5px 15px;
+        border-radius: 15px;
+        border: 1px solid #ccc;
+        white-space: nowrap; /* Không xuống dòng chữ trong nút */
+        cursor: pointer;
+        transition: all 0.2s;
     }
 
-    /* Chỉnh màu chữ bên trong nút */
-    div[role="radiogroup"] > label > div[data-testid="stMarkdownContainer"] > p {
-        font-weight: 600;
-        font-size: 16px;
-        margin: 0;
-    }
-
-    /* Hiệu ứng khi chọn (Highlight) - Giữ màu xanh Vinamilk */
+    /* Hiệu ứng nút ĐANG CHỌN */
     div[role="radiogroup"] label[data-checked="true"] {
         background-color: #154360 !important;
         border-color: #154360 !important;
     }
-
-    /* Ép chữ màu trắng khi đã chọn (để nổi trên nền xanh) */
-    div[role="radiogroup"] label[data-checked="true"] > div[data-testid="stMarkdownContainer"] > p {
-        color: white !important; 
+    div[role="radiogroup"] label[data-checked="true"] p {
+        color: white !important;
+        font-weight: bold;
     }
 
-    /* 3. Tinh chỉnh Header */
-    .main-header {
-        font-size: 24px !important; 
-        font-weight: 700; 
-        color: var(--text-color); /* Tự đổi màu chữ tiêu đề */
-        margin-top: -30px;
-        text-align: center;
+    /* 3. ÉP DASHBOARD METRICS HIỂN THỊ 1 HÀNG TRÊN MOBILE */
+    /* Mẹo: Streamlit dùng Flexbox, ta ép nó không được wrap (xuống dòng) */
+
+    /* Chỉ áp dụng cho các cột metric (thường nằm ở Block ngang đầu tiên) */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important; /* Cấm xuống dòng */
+        overflow-x: auto; /* Nếu chật quá thì cho cuộn ngang */
+        gap: 0.5rem !important;
     }
+
+    /* Thu nhỏ chữ trong Metric để vừa màn hình điện thoại */
+    [data-testid="stMetricValue"] {
+        font-size: 1.2rem !important; /* Số to vừa phải */
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.7rem !important; /* Nhãn nhỏ lại */
+        white-space: nowrap; /* Không xuống dòng nhãn */
+    }
+
+    /* 4. ĐẨY NỘI DUNG XUỐNG ĐỂ KHÔNG BỊ MENU CHE MẤT */
     .block-container {
-        padding-top: 1rem;
+        padding-top: 5rem !important; /* Chừa chỗ cho cái Menu dính */
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    /* Tinh chỉnh Header tiêu đề */
+    .main-header {
+        font-size: 20px !important; 
+        font-weight: 700; 
+        color: var(--text-color);
+        text-align: center;
+        margin-bottom: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -128,9 +151,7 @@ def get_batch_stock_info(target_sku):
     df = pd.DataFrame(ws.get_all_records())
     if df.empty: return []
 
-    # --- FIX QUAN TRỌNG: ÉP KIỂU STRING ĐỂ TRÁNH LỖI VỚI MÃ SỐ ---
     df['FullCode'] = df['FullCode'].astype(str)
-
     df['SKU'] = df['FullCode'].apply(lambda x: x.split('|')[0] if '|' in x else x)
     df['Batch'] = df['FullCode'].apply(lambda x: x.split('|')[1] if '|' in x else 'Unknown')
 
@@ -199,19 +220,20 @@ authenticator.login()
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
 
-    # === HEADER NAVIGATOR ===
-    c_logo, c_menu, c_logout = st.columns([1, 6, 1], vertical_alignment="center")
-    with c_logo:
-        st.image("https://cdn-icons-png.flaticon.com/512/2554/2554045.png", width=45)
-    with c_menu:
-        current_tab = st.radio("M", ["Dashboard", "Nhập Kho", "Xuất Kho", "Truy Xuất"], horizontal=True)
-    with c_logout:
-        authenticator.logout('Exit', 'main')
-    st.divider()
+    # === HEADER NAVIGATOR (STICKY) ===
+    # Tách logo và logout ra khỏi Menu để Menu dính một mình (Gọn hơn trên mobile)
+    # Menu sẽ nằm ở top, fixed. Logo và Logout sẽ nằm ở dưới content header.
+
+    current_tab = st.radio("M", ["Dashboard", "Nhập Kho", "Xuất Kho", "Truy Xuất"], horizontal=True,
+                           label_visibility="collapsed")
+
+    # Nút Logout nhỏ gọn góc phải trên cùng (hack css absolute)
+    with st.sidebar:  # Hack để dùng hàm logout của thư viện nhưng ẩn sidebar đi
+        authenticator.logout('Exit', 'sidebar')
 
     # ================= MODULE 1: NHẬP KHO =================
     if current_tab == "Nhập Kho":
-        st.markdown(f'<p class="main-header">📥 NHẬP KHO (INBOUND)</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="main-header">📥 NHẬP KHO</p>', unsafe_allow_html=True)
         c1, c2 = st.columns([1, 1.5], gap="large")
 
         with c1:
@@ -291,15 +313,14 @@ if st.session_state["authentication_status"] is True:
                             except:
                                 st.error("Lỗi tạo PDF")
             else:
-                st.info("👈 Vui lòng nhập thông tin bên trái.")
+                st.info("👈 Vui lòng nhập thông tin.")
                 c_wait1, c_wait2, c_wait3 = st.columns([1, 2, 1])
                 with c_wait2:
-                    st.image("https://cdn-icons-png.flaticon.com/512/1466/1466668.png", caption="Waiting for data...",
-                             width=150)
+                    st.image("https://cdn-icons-png.flaticon.com/512/1466/1466668.png", caption="Waiting...", width=100)
 
     # ================= MODULE 2: XUẤT KHO =================
     elif current_tab == "Xuất Kho":
-        st.markdown(f'<p class="main-header">📤 XUẤT KHO (OUTBOUND)</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="main-header">📤 XUẤT KHO</p>', unsafe_allow_html=True)
         mode = st.radio("Chế độ:", ["🚀 Xuất Lẻ", "🏭 Xuất PO"], horizontal=True)
         st.divider()
 
@@ -318,7 +339,7 @@ if st.session_state["authentication_status"] is True:
                 if raw:
                     sku = raw.split("|")[0] if "|" in raw else raw
                     if sku in MOCK_DB_PO[po]['BOM']:
-                        st.success(f"✅ ĐÚNG VẬT TƯ: {sku}")
+                        st.success(f"✅ ĐÚNG: {sku}")
                         final_code = None;
                         max_qty = 0
 
@@ -331,9 +352,9 @@ if st.session_state["authentication_status"] is True:
                                 max_qty = found_batch['qty']
                                 st.caption(f"Lô: {batch_in_code} - Tồn: {max_qty}")
                             else:
-                                st.error(f"❌ Lô {batch_in_code} đã hết hàng!")
+                                st.error(f"❌ Lô {batch_in_code} hết hàng!")
                         else:
-                            st.warning("⚠️ Thiếu Batch -> Chọn lô (FEFO):")
+                            st.warning("⚠️ Chọn lô (FEFO):")
                             stock_data = get_batch_stock_info(sku)
                             if stock_data:
                                 opts = [f"{i['batch']} (Tồn: {i['qty']} - HSD: {i['hsd']})" for i in stock_data]
@@ -341,7 +362,7 @@ if st.session_state["authentication_status"] is True:
                                 final_code = f"{sku}|{sel.split(' (')[0]}"
                                 max_qty = int(sel.split("Tồn: ")[1].split(" -")[0])
                             else:
-                                st.error("❌ Hết hàng tồn kho!")
+                                st.error("❌ Hết hàng!")
 
                         if final_code and max_qty > 0:
                             st.divider()
@@ -404,9 +425,7 @@ if st.session_state["authentication_status"] is True:
         if ws_inv:
             df = pd.DataFrame(ws_inv.get_all_records())
             if not df.empty:
-                # --- FIX CRASH: ÉP KIỂU STRING ---
                 df['FullCode'] = df['FullCode'].astype(str)
-
                 df['Qty'] = pd.to_numeric(df['Qty'], errors='coerce').fillna(0)
                 df['Real'] = df.apply(lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']) else x['Qty'], axis=1)
                 df['SKU'] = df['FullCode'].apply(lambda x: x.split('|')[0] if '|' in x else x)
@@ -414,14 +433,15 @@ if st.session_state["authentication_status"] is True:
                 total = df.groupby('SKU')['Real'].sum();
                 total = total[total > 0]
 
+                # --- ÉP 3 CỘT NÀY THÀNH 1 HÀNG TRÊN MOBILE ---
                 c1, c2, c3 = st.columns(3)
                 c1.metric("📦 Tổng Tồn", f"{int(total.sum()):,}")
                 c2.metric("🔖 Loại SKU", len(total))
-                c3.metric("🏭 PO Pending", 2)
+                c3.metric("🏭 Pending", 2)
 
                 st.divider()
 
-                t1, t2 = st.tabs(["📝 Nhật Ký Kho", "🏭 Tiến Độ Sản Xuất"])
+                t1, t2 = st.tabs(["📝 Nhật Ký Kho", "🏭 Tiến Độ SX"])
                 with t1:
                     st.dataframe(df.sort_values('Timestamp', ascending=False).head(10)[
                                      ['Timestamp', 'FullCode', 'Action', 'Qty', 'User']], use_container_width=True,
@@ -432,7 +452,6 @@ if st.session_state["authentication_status"] is True:
                         df_p = pd.DataFrame(ws_po.get_all_records())
 
 
-                        # --- FIX MÀU CHỮ: Ép màu đen cho nền sáng ---
                         def color_status(val):
                             if val == 'Done':
                                 return 'background-color: #d4edda; color: black;'
@@ -455,7 +474,6 @@ if st.session_state["authentication_status"] is True:
             ws = connect_db("Inventory")
             if ws:
                 df = pd.DataFrame(ws.get_all_records())
-                # --- FIX SEARCH: Ép kiểu string trước khi tìm ---
                 df['FullCode'] = df['FullCode'].astype(str)
                 sub = df[df['FullCode'].str.contains(q, case=False, na=False)].copy()
 
