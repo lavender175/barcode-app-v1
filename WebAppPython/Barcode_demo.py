@@ -141,7 +141,8 @@ if st.session_state["authentication_status"] is True:
 
     # --- GIAO DIỆN CHÍNH ---
     st.title("HỆ THỐNG QUẢN LÝ KHO & SẢN XUẤT")
-    tabs = ["📥 Nhập Kho (Inbound)", "🏭 Xuất Kho (Outbound)", "📊 Dashboard"]
+    # Tìm dòng khai báo tabs và sửa lại:
+    tabs = ["📊 Dashboard","📥 Nhập Kho (Inbound)", "🏭 Xuất Kho (Outbound)", "🔍 Truy Xuất (Traceability)"]
     current_tab = st.radio("Chọn nghiệp vụ:", tabs, horizontal=True, label_visibility="collapsed")
     st.divider()
 
@@ -427,6 +428,88 @@ if st.session_state["authentication_status"] is True:
 
         else:
             st.error("Mất kết nối với Google Sheets!")
+        # ================= MODULE 4: TRUY XUẤT NGUỒN GỐC (ISO/HACCP) =================
+    elif "Truy Xuất" in current_tab:
+        st.subheader("🔍 Truy Xuất Nguồn Gốc (Traceability System)")
+        st.caption("Tiêu chuẩn ISO 22000/HACCP: Theo dõi dòng chảy của lô hàng từ đầu vào đến đầu ra.")
+
+        # Layout nhập liệu
+        col_search, col_info = st.columns([1, 2])
+
+        with col_search:
+            st.markdown("#### 1. Nhập mã Lô/Batch cần tra cứu")
+            batch_query = st.text_input("Nhập số Batch (VD: LOT-1234):", placeholder="Scan or Type Batch ID...")
+
+            if batch_query:
+                ws = connect_db("Inventory")
+                if ws:
+                    df = pd.DataFrame(ws.get_all_records())
+
+                    # Lọc dữ liệu theo Batch (Tìm tương đối)
+                    # Chuyển FullCode thành chuỗi để tránh lỗi
+                    trace_data = df[df['FullCode'].astype(str).str.contains(batch_query, case=False, na=False)]
+
+                    if not trace_data.empty:
+                        # Tìm thông tin gốc (Lần nhập đầu tiên)
+                        first_import = trace_data[trace_data['Action'] == 'IMPORT'].sort_values('Timestamp').iloc[0]
+
+                        # Tính toán tồn kho của riêng lô này
+                        trace_data['Qty'] = pd.to_numeric(trace_data['Qty'], errors='coerce')
+                        trace_data['Real_Qty'] = trace_data.apply(
+                            lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']).upper() else x['Qty'], axis=1
+                        )
+                        balance = trace_data['Real_Qty'].sum()
+
+                        # Hiển thị thẻ tóm tắt bên phải
+                        with col_info:
+                            st.info(f"🔎 Kết quả tra cứu: **{first_import['FullCode']}**")
+                            m1, m2, m3 = st.columns(3)
+                            m1.metric("Ngày Nhập Kho", pd.to_datetime(first_import['Timestamp']).strftime("%d/%m/%Y"))
+                            m2.metric("Hạn Sử Dụng", first_import['HSD'])
+                            # Logic màu sắc: Còn hàng (Xanh), Hết hàng (Xám), Âm (Đỏ - Lỗi)
+                            color_balance = "normal" if balance > 0 else "off"
+                            m3.metric("Tồn Kho Hiện Tại", f"{balance} Unit",
+                                      delta="Available" if balance > 0 else "Out of Stock", delta_color=color_balance)
+
+                            st.divider()
+                            st.markdown("**📜 Dòng Chảy Vật Tư (Transaction History):**")
+
+                            # Hiển thị dạng Timeline đơn giản
+                            for index, row in trace_data.iterrows():
+                                icon = "📥" if row['Action'] == 'IMPORT' else "🏭" if 'PO' in row['Action'] else "🚛"
+                                event_color = "green" if row['Action'] == 'IMPORT' else "orange" if 'PO' in row[
+                                    'Action'] else "blue"
+
+                                st.markdown(f"""
+                                    :{event_color}[**{pd.to_datetime(row['Timestamp']).strftime('%H:%M %d/%m')}**] | {icon} **{row['Action']}** — SL: **{row['Qty']}** — Vị trí: *{row['Location']}* — User: {row['User']}
+                                    """)
+                    else:
+                        st.warning("⚠️ Không tìm thấy dữ liệu về lô hàng này!")
+                else:
+                    st.error("Lỗi kết nối Database!")
+            else:
+                st.info("👈 Vui lòng nhập hoặc quét mã Batch để bắt đầu truy xuất.")
+
+        # Phần Visual (Biểu đồ luồng đi)
+        if batch_query and 'trace_data' in locals() and not trace_data.empty:
+            st.divider()
+            st.subheader("🕸️ Sơ Đồ Phân Phối (Supply Chain Visualization)")
+
+            #
+
+            # Vẽ biểu đồ Gantt hoặc Timeline bằng Altair
+            chart = alt.Chart(trace_data).mark_circle(size=100).encode(
+                x=alt.X('Timestamp:T', title='Thời gian'),
+                y=alt.Y('Action:N', title='Hành động'),
+                color='Action',
+                tooltip=['FullCode', 'Qty', 'User', 'Location']
+            ).properties(
+                width='container',
+                height=300,
+                title="Dòng thời gian hoạt động của Batch"
+            ).interactive()
+
+            st.altair_chart(chart, use_container_width=True)
 
 elif st.session_state["authentication_status"] is False:
     st.error('Sai mật khẩu!')
