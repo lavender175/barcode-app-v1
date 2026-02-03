@@ -304,17 +304,129 @@ if st.session_state["authentication_status"] is True:
 
     # ================= MODULE 3: DASHBOARD =================
     elif "Dashboard" in current_tab:
-        st.subheader("Báo Cáo Tồn Kho")
-        ws = connect_db("Inventory")
-        if ws:
-            df = pd.DataFrame(ws.get_all_records())
-            if not df.empty:
-                m1, m2 = st.columns(2)
-                m1.metric("Tổng Phiếu Nhập", len(df[df['Action'] == 'IMPORT']))
-                m2.metric("Tổng Phiếu Xuất", len(df[df['Action'].str.contains('EXPORT')]))
-                st.dataframe(df, use_container_width=True)
-            else:
-                st.warning("Chưa có dữ liệu!")
+        st.subheader("📊 Dashboard Quản Trị Kho Vận")
+
+        # 1. TẢI DỮ LIỆU TỪ 2 NGUỒN
+        ws_inv = connect_db("Inventory")
+        ws_po = connect_db("Production")
+
+        if ws_inv and ws_po:
+            with st.spinner("Đang tổng hợp dữ liệu kho..."):
+                # Load Dataframes
+                df_inv = pd.DataFrame(ws_inv.get_all_records())
+                df_po = pd.DataFrame(ws_po.get_all_records())
+
+                if df_inv.empty:
+                    st.warning("Chưa có dữ liệu kho!")
+                    st.stop()
+
+                # --- XỬ LÝ SỐ LIỆU (AGGREGATION LOGIC) ---
+                # Chuyển đổi cột Qty sang số (đề phòng lỗi string)
+                df_inv['Qty'] = pd.to_numeric(df_inv['Qty'], errors='coerce').fillna(0)
+
+                # Logic: Nếu Action là EXPORT hoặc EXPORT_PO thì nhân -1 để trừ kho
+                # (Giả sử trong Sheet ông đang lưu số dương cho cả 2 hành động)
+                df_inv['Real_Qty'] = df_inv.apply(
+                    lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']).upper() else x['Qty'], axis=1
+                )
+
+                # Tách SKU từ FullCode (VNM-A|LOT-1 -> VNM-A)
+                df_inv['SKU_Only'] = df_inv['FullCode'].apply(lambda x: x.split('|')[0] if '|' in str(x) else str(x))
+
+                # TÍNH TỒN KHO THỰC TẾ (Stock on Hand)
+                stock_df = df_inv.groupby('SKU_Only')['Real_Qty'].sum().reset_index()
+                stock_df.columns = ['SKU', 'Stock_Qty']
+                stock_df = stock_df[stock_df['Stock_Qty'] > 0]  # Chỉ lấy hàng còn tồn
+
+                # TÍNH CÁC CHỈ SỐ KPI
+                total_items = stock_df['Stock_Qty'].sum()
+                total_skus = len(stock_df)
+                po_pending = len(df_po[df_po['Status'] == 'Pending'])
+
+                # Cảnh báo Date (Giả lập check logic HSD từ df_inv)
+                # Lấy các lô nhập (IMPORT) và check HSD so với hôm nay
+                df_imports = df_inv[df_inv['Action'] == 'IMPORT'].copy()
+                try:
+                    df_imports['HSD'] = pd.to_datetime(df_imports['HSD'], errors='coerce')
+                    today = pd.to_datetime(datetime.now().date())
+                    # Lọc lô sắp hết hạn trong 30 ngày
+                    near_exp = df_imports[
+                        (df_imports['HSD'] > today) & (df_imports['HSD'] <= today + timedelta(days=30))]
+                    warning_count = len(near_exp)
+                except:
+                    warning_count = 0
+
+                # --- GIAO DIỆN HIỂN THỊ (UI/UX) ---
+
+                # ROW 1: METRIC CARDS
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("📦 Tổng Tồn Kho (Unit)", f"{int(total_items):,}", delta="Real-time")
+                c2.metric("🔖 Số loại SKU", total_skus, help="Số mã hàng đang quản lý")
+                c3.metric("🏭 Lệnh SX Chờ (Pending)", po_pending, delta=f"-{len(df_po[df_po['Status'] == 'Done'])} Done",
+                          delta_color="inverse")
+                c4.metric("⚠️ Cảnh Báo Date (30d)", warning_count, delta="Ưu tiên xuất", delta_color="inverse")
+
+                st.divider()
+
+                # ROW 2: BIỂU ĐỒ PHÂN TÍCH (CHARTS)
+                col_chart1, col_chart2 = st.columns([2, 1])
+
+                with col_chart1:
+                    st.markdown("##### 📈 Phân Bố Tồn Kho Theo SKU")
+                    if not stock_df.empty:
+                        # Biểu đồ cột dùng Altair
+                        chart_bar = alt.Chart(stock_df).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+                            x=alt.X('SKU', sort='-y', title=None),
+                            y=alt.Y('Stock_Qty', title='Số lượng tồn'),
+                            color=alt.Color('SKU', legend=None),
+                            tooltip=['SKU', 'Stock_Qty']
+                        ).properties(height=300)
+                        st.altair_chart(chart_bar, use_container_width=True)
+                    else:
+                        st.info("Kho đang trống.")
+
+                with col_chart2:
+                    st.markdown("##### 🍩 Tỷ Lệ Trạng Thái PO")
+                    if not df_po.empty:
+                        # Biểu đồ tròn (Donut chart)
+                        po_stats = df_po['Status'].value_counts().reset_index()
+                        po_stats.columns = ['Status', 'Count']
+
+                        chart_donut = alt.Chart(po_stats).mark_arc(innerRadius=50).encode(
+                            theta=alt.Theta(field="Count", type="quantitative"),
+                            color=alt.Color(field="Status", type="nominal"),
+                            tooltip=['Status', 'Count']
+                        ).properties(height=300)
+                        st.altair_chart(chart_donut, use_container_width=True)
+
+                st.divider()
+
+                # ROW 3: CHI TIẾT GIAO DỊCH GẦN NHẤT & PO
+                t1, t2 = st.tabs(["📝 Nhật Ký Kho (Gần nhất)", "🏭 Tiến Độ Sản Xuất"])
+
+                with t1:
+                    # Chỉ hiện 10 dòng mới nhất, bỏ bớt cột rườm rà
+                    display_cols = ['Timestamp', 'User', 'FullCode', 'Action', 'Qty', 'Location']
+                    st.dataframe(
+                        df_inv.sort_values(by='Timestamp', ascending=False).head(10)[display_cols],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                with t2:
+                    # Hiển thị bảng PO với định dạng màu sắc cho Status
+                    def highlight_status(val):
+                        color = '#d4edda' if val == 'Done' else '#fff3cd' if val == 'Pending' else '#cce5ff'
+                        return f'background-color: {color}'
+
+
+                    st.dataframe(
+                        df_po.style.applymap(highlight_status, subset=['Status']),
+                        use_container_width=True
+                    )
+
+        else:
+            st.error("Mất kết nối với Google Sheets!")
 
 elif st.session_state["authentication_status"] is False:
     st.error('Sai mật khẩu!')
