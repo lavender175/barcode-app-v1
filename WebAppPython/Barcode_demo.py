@@ -32,25 +32,35 @@ st.markdown("""
         display: flex;
         flex-direction: row;
         gap: 10px;
-        overflow-x: auto; /* Cuộn ngang trên điện thoại bé */
+        overflow-x: auto; 
         padding-bottom: 5px;
+        justify-content: center;
     }
+
     div[role="radiogroup"] > label {
-        background-color: #f0f2f6;
-        padding: 5px 15px;
+        background-color: #f0f2f6 !important; /* Luôn nền sáng */
+        padding: 8px 20px;
         border-radius: 20px;
         border: 1px solid #e0e0e0;
         transition: all 0.3s;
     }
-    div[role="radiogroup"] > label:hover {
-        background-color: #e3f2fd;
-        border-color: #2196f3;
+
+    /* QUAN TRỌNG: Ép màu chữ đen cho nút chưa chọn */
+    div[role="radiogroup"] > label > div[data-testid="stMarkdownContainer"] > p {
+        color: #31333F !important; /* Màu đen xám */
+        font-weight: 600;
+        font-size: 16px;
     }
+
     /* Highlight tab đang chọn */
     div[role="radiogroup"] label[data-checked="true"] {
-        background-color: #154360 !important;
+        background-color: #154360 !important; /* Nền xanh đậm */
+        border-color: #154360 !important;
+    }
+
+    /* Ép màu chữ trắng cho nút ĐÃ CHỌN */
+    div[role="radiogroup"] label[data-checked="true"] > div[data-testid="stMarkdownContainer"] > p {
         color: white !important;
-        font-weight: bold;
     }
 
     /* 3. Tinh chỉnh Header */
@@ -59,6 +69,7 @@ st.markdown("""
         font-weight: 700; 
         color: #154360; 
         margin-top: -20px;
+        text-align: center;
     }
     .block-container {
         padding-top: 1rem;
@@ -410,14 +421,15 @@ if st.session_state["authentication_status"] is True:
         if ws_inv:
             df = pd.DataFrame(ws_inv.get_all_records())
             if not df.empty:
-                # --- FIX LỖI TYPE ERROR TẠI ĐÂY ---
-                # Ép toàn bộ cột FullCode sang dạng chuỗi (string) để tránh lỗi với mã số
+                # --- [FIX BUG QUAN TRỌNG] ---
+                # 1. Ép kiểu FullCode sang chuỗi (String) TRƯỚC KHI xử lý
                 df['FullCode'] = df['FullCode'].astype(str)
 
+                # 2. Xử lý số liệu
                 df['Qty'] = pd.to_numeric(df['Qty'], errors='coerce').fillna(0)
                 df['Real'] = df.apply(lambda x: -x['Qty'] if 'EXPORT' in str(x['Action']) else x['Qty'], axis=1)
 
-                # Logic tách chuỗi an toàn hơn
+                # 3. Tách chuỗi an toàn (Giờ x chắc chắn là string nên không lỗi nữa)
                 df['SKU'] = df['FullCode'].apply(lambda x: x.split('|')[0] if '|' in x else x)
 
                 total = df.groupby('SKU')['Real'].sum();
@@ -434,7 +446,7 @@ if st.session_state["authentication_status"] is True:
                 t1, t2 = st.tabs(["📝 Nhật Ký Kho", "🏭 Tiến Độ Sản Xuất"])
 
                 with t1:
-                    st.dataframe(df.sort_values('Timestamp', ascending=False).head(15)[
+                    st.dataframe(df.sort_values('Timestamp', ascending=False).head(10)[
                                      ['Timestamp', 'FullCode', 'Action', 'Qty', 'User']], use_container_width=True,
                                  hide_index=True)
 
@@ -443,9 +455,15 @@ if st.session_state["authentication_status"] is True:
                         df_p = pd.DataFrame(ws_po.get_all_records())
 
 
+                        # --- [FIX MÀU CHỮ BẢNG] ---
                         def color_status(val):
-                            c = '#d4edda' if val == 'Done' else '#fff3cd' if val == 'Pending' else '#cce5ff'
-                            return f'background-color: {c}'
+                            if val == 'Done':
+                                return 'background-color: #d4edda; color: black;'  # Thêm color: black
+                            elif val == 'Pending':
+                                return 'background-color: #fff3cd; color: black;'  # Thêm color: black
+                            elif val == 'Running':
+                                return 'background-color: #cce5ff; color: black;'  # Thêm color: black
+                            return ''
 
 
                         st.dataframe(df_p.style.applymap(color_status, subset=['Status']), use_container_width=True)
