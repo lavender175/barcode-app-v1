@@ -19,88 +19,64 @@ import tempfile
 # --- 1. CẤU HÌNH HỆ THỐNG ---
 st.set_page_config(page_title="WMS Demo - Vinamilk", layout="wide", page_icon="🥛")
 
-# --- CSS "TÀ THUẬT" TẠO STICKY HEADER ---
+# --- CSS TẠO GIAO DIỆN APP (LOGO TRÁI - MENU PHẢI) ---
 st.markdown("""
 <style>
-    /* 1. Ẩn hết giao diện mặc định của Streamlit cho sạch */
-    [data-testid="stSidebar"] {display: none;}
-    [data-testid="collapsedControl"] {display: none;}
-    header[data-testid="stHeader"] {display: none;}
-    
-    /* 2. TẠO THANH HEADER DÍNH CHẶT (STICKY) */
-    div[role="radiogroup"] {
-        position: fixed;   /* Chốt vị trí */
-        top: 0;
-        left: 0;
-        width: 100%;       /* Full màn hình */
-        z-index: 999999;   /* Nổi lên trên cùng */
-        background-color: var(--background-color); /* Màu nền trùng với theme */
-        border-bottom: 1px solid #ddd; /* Đường kẻ mỏng ngăn cách */
-        padding: 10px 10px 10px 70px; /* Padding trái 70px để chừa chỗ cho Logo */
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); /* Bóng đổ cho đẹp */
-        
-        display: flex;
-        flex-direction: row;
-        gap: 10px;
-        overflow-x: auto; /* Cho phép cuộn ngang menu */
-        align-items: center;
+    /* 1. Tùy chỉnh Header mặc định của Streamlit */
+    header[data-testid="stHeader"] {
+        /* Màu nền Header (Trắng hoặc Xám tùy theme) */
+        background-color: var(--background-color);
+        /* Đường viền dưới cho giống App */
+        border-bottom: 1px solid #f0f2f6;
+        /* Đảm bảo nó luôn nằm trên cùng */
+        z-index: 999999;
     }
 
-    /* 3. CHÈN LOGO VÀO TRƯỚC MENU (Dùng CSS ::before) */
-    div[role="radiogroup"]::before {
+    /* 2. CHÈN LOGO VÀO GÓC TRÁI HEADER (QUAN TRỌNG NHẤT) */
+    header[data-testid="stHeader"]::before {
         content: "";
-        /* Link icon Logo (Ông có thể thay link ảnh logo cty vào đây) */
-        background-image: url('https://cdn-icons-png.flaticon.com/512/2554/2554045.png'); 
+        /* Link Logo (Thay bằng link logo thật của ông nếu cần) */
+        background-image: url('https://cdn-icons-png.flaticon.com/512/2554/2554045.png');
         background-size: contain;
         background-repeat: no-repeat;
         position: absolute;
-        left: 15px; /* Căn trái */
-        top: 50%;
+        left: 20px;       /* Cách lề trái 20px */
+        top: 50%;         /* Căn giữa chiều dọc */
         transform: translateY(-50%);
-        width: 40px;
+        width: 40px;      /* Kích thước logo */
         height: 40px;
+        z-index: 999;
     }
 
-    /* 4. STYLE CHO CÁC NÚT MENU (Dạng thẻ Pill) */
-    div[role="radiogroup"] > label {
-        background-color: var(--secondary-background-color) !important;
-        padding: 6px 16px;
-        border-radius: 20px;
-        border: 1px solid transparent;
-        white-space: nowrap; /* Không xuống dòng */
-        transition: all 0.3s;
-        cursor: pointer;
-    }
-    
-    /* Hiệu ứng nút đang chọn */
-    div[role="radiogroup"] label[data-checked="true"] {
-        background-color: #154360 !important; /* Xanh Vinamilk */
-        color: white !important;
-        font-weight: bold;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    }
-    div[role="radiogroup"] label[data-checked="true"] p {
-        color: white !important;
+    /* 3. Dời nút 3 gạch (Hamburger) qua phải và đổi màu cho đẹp (nếu cần) */
+    [data-testid="stSidebarCollapsedControl"] {
+        color: #154360 !important; /* Màu xanh Vinamilk */
     }
 
-    /* 5. ĐẨY NỘI DUNG XUỐNG (Quan trọng: để không bị Header che mất) */
-    .block-container {
-        padding-top: 5rem !important; 
-        padding-bottom: 3rem !important;
-    }
-
-    /* 6. Dashboard 1 hàng ngang */
+    /* 4. Dashboard 1 hàng ngang trên Mobile */
     [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
         overflow-x: auto !important;
+        padding-bottom: 5px;
     }
     
-    /* Header tiêu đề con */
+    /* 5. Tinh chỉnh lại khoảng cách nội dung để không bị Header che */
+    .block-container {
+        padding-top: 3rem !important; 
+    }
+    
+    /* Ẩn nút Manage App / Deploy thừa thãi ở góc phải (nếu muốn sạch sẽ) */
+    .stAppDeployButton {
+        display: none;
+    }
+    
+    /* Tiêu đề trang con */
     .main-header {
-        font-size: 20px !important; 
+        font-size: 22px !important; 
         font-weight: 700; 
         color: var(--text-color);
         margin-bottom: 15px;
+        margin-top: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -208,13 +184,21 @@ authenticator.login()
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     
-    # === HEADER DÍNH (STICKY HEADER) ===
-    # Chỉ cần khai báo st.radio, CSS sẽ tự động biến nó thành Header dính kèm Logo
-    current_tab = st.radio("M", ["Dashboard", "Nhập Kho", "Xuất Kho", "Truy Xuất"], horizontal=True, label_visibility="collapsed")
-    
-    # Nút Logout ẩn (Hack: Cho vào Sidebar nhưng Sidebar đã bị ẩn, chỉ dùng logic)
-    with st.sidebar: authenticator.logout('Exit', 'sidebar') 
-    # Nếu muốn nút logout hiện, ta có thể thêm vào header sau này, tạm thời để code gọn
+    # === MENU SIDEBAR (NƠI CHỨA NÚT BẤM) ===
+    # Khi bấm nút 3 gạch, cái này sẽ trượt ra
+    with st.sidebar:
+        # Không cần st.image ở đây nữa vì đã có trên Header dính rồi
+        st.markdown(f"👤 **{user_name}**")
+        
+        current_tab = st.radio(
+            "CHỨC NĂNG:",
+            ["Dashboard", "Nhập Kho", "Xuất Kho", "Truy Xuất"],
+            index=0
+        )
+        
+        st.divider()
+        authenticator.logout('Đăng xuất', 'sidebar')
+        st.caption("v8.0 Mobile Native")
 
     # ================= MODULE 1: NHẬP KHO =================
     if current_tab == "Nhập Kho":
