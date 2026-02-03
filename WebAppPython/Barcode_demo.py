@@ -324,21 +324,51 @@ if st.session_state["authentication_status"] is True:
                 st.image("https://cdn-icons-png.flaticon.com/512/1466/1466668.png", width=100,
                          caption="Waiting for data...")
 
-        # ================= MODULE 2: XUẤT KHO THÔNG MINH (FEFO READY) =================
+    # ================= MODULE 2: XUẤT KHO (NÂNG CẤP PO) =================
     elif "Xuất Kho" in current_tab:
         st.subheader("📤 Xuất Kho (Smart Outbound)")
         mode = st.radio("Chế độ:", ["🚀 Xuất Lẻ (Thông thường)", "🏭 Xuất Cho Sản Xuất (Theo PO)"], horizontal=True)
         st.divider()
 
-        # --- MODE A: XUẤT CHO SẢN XUẤT ---
+        # --- MODE A: XUẤT SẢN XUẤT (NEW FEATURE) ---
         if "Theo PO" in mode:
-            # (Giữ nguyên logic PO cũ của ông ở đây, hoặc copy lại từ bài trước)
-            st.info("Chức năng PO giữ nguyên như cũ...")
+            c_po, c_scan = st.columns([1, 2])
+            with c_po:
+                po_sel = st.selectbox("Chọn Lệnh SX:", list(MOCK_DB_PO.keys()))
+                po_data = MOCK_DB_PO[po_sel]
+                st.info(f"SP: {po_data['Product']}")
+                st.write("**Công thức (BOM):**")
+                st.dataframe(pd.DataFrame(list(po_data['BOM'].items()), columns=['SKU', 'Cần (Kg)']), hide_index=True)
 
-            # --- MODE B: XUẤT LẺ (CẬP NHẬT LOGIC CHẶN LỖI) ---
+            with c_scan:
+                st.write("👇 **QUÉT MÃ NGUYÊN LIỆU ĐỐI CHIẾU:**")
+                scan_in = st.text_input("Scanner Input:", key="po_scan", placeholder="Click vào đây và bắn súng...")
+
+                if scan_in:
+                    s_sku = scan_in.split("|")[0] if "|" in scan_in else scan_in
+                    s_batch = scan_in.split("|")[1] if "|" in scan_in else "N/A"
+
+                    # VALIDATION LOGIC
+                    if s_sku in po_data['BOM']:
+                        st.success(f"✅ ĐÚNG NGUYÊN LIỆU: {s_sku}")
+                        st.caption(f"Batch: {s_batch}")
+
+                        confirm_qty = st.number_input(f"Số lượng xuất thực tế ({s_sku}):", value=po_data['BOM'][s_sku])
+                        if st.button("Xác nhận xuất PO"):
+                            ws = connect_db("Inventory")
+                            if ws:
+                                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                ws.append_row(
+                                    [now, user_name, scan_in, "EXPORT_PO", "", "", f"To: {po_sel}", -confirm_qty])
+                                st.toast("Đã xuất kho thành công!", icon="🏭")
+                    else:
+                        st.error(f"⛔ SAI NGUYÊN LIỆU! '{s_sku}' KHÔNG CÓ TRONG LỆNH {po_sel}")
+
+        # --- MODE B: XUẤT LẺ (CẬP NHẬT LOGIC CHẶN LỖI) ---
         else:
             st.write("📱 **Quét mã vạch:**")
-            scan_method = st.radio("Input:", ["Súng Quét", "Camera"], horizontal=True, label_visibility="collapsed")
+            scan_method = st.radio("Input:", ["Súng Quét", "Camera"], horizontal=True,
+                                   label_visibility="collapsed")
 
             raw_code = None
             if "Súng" in scan_method:
